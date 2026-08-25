@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DJ BazooKI — DJ-Pult</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow" style="color:var(--gold)">DJ-Pult · C + D</div>
+      <button id="logout" class="btn ghost" style="display:none">abmelden</button>
+    </div>
+
+    <!-- Login-Gate -->
+    <div id="gate" style="text-align:center;padding-top:20px">
+      <div class="crest">
+        <div class="monogram">C&nbsp;+&nbsp;D</div>
+        <div class="couple">Caro &amp; Daniel</div>
+        <svg class="sprig" width="120" height="26" viewBox="0 0 120 26" fill="none" aria-hidden="true">
+          <g stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity=".55">
+            <line x1="6" y1="13" x2="46" y2="13" /><line x1="74" y1="13" x2="114" y2="13" />
+          </g>
+          <g fill="currentColor">
+            <path d="M60 4 C57 8 57 12 60 15 C63 12 63 8 60 4Z"/>
+            <ellipse cx="54" cy="14" rx="4.5" ry="2.2" transform="rotate(-25 54 14)"/>
+            <ellipse cx="66" cy="14" rx="4.5" ry="2.2" transform="rotate(25 66 14)"/>
+            <ellipse cx="57" cy="19" rx="4" ry="2" transform="rotate(-20 57 19)"/>
+            <ellipse cx="63" cy="19" rx="4" ry="2" transform="rotate(20 63 19)"/>
+          </g>
+        </svg>
+        <div class="date">5. September 2026</div>
+        <div class="toolname">Steuerpult · <b>DJ BazooKI</b></div>
+      </div>
+      <p class="muted" style="max-width:400px;margin:8px auto 18px;line-height:1.5">
+        Melde dich mit deinem Spotify-Konto an (Premium nötig). Spotify muss auf einem Gerät offen und aktiv sein,
+        damit Songs abgespielt werden können.
+      </p>
+      <a href="/login"><button class="btn gold" style="padding:12px 22px;font-size:15px">Mit Spotify anmelden</button></a>
+    </div>
+
+    <!-- Konsole -->
+    <div id="console" style="display:none">
+      <div id="vibe" class="vibe big"></div>
+
+      <div class="row now" id="now" style="margin-top:16px"></div>
+      <div id="playbar" style="margin-top:10px"></div>
+      <div id="device-bar" style="margin-top:10px"></div>
+
+      <section style="margin-top:20px">
+        <div class="section-head">Freigabe · offene Wünsche (<span id="p-count">0</span>)</div>
+        <div id="pending" style="display:flex;flex-direction:column;gap:8px"></div>
+      </section>
+
+      <section style="margin-top:20px">
+        <div class="section-head">Queue · frei umsortierbar (<span id="q-count">0</span>)</div>
+        <div id="queue" style="display:flex;flex-direction:column;gap:8px"></div>
+      </section>
+
+      <button id="reset" class="btn ghost" style="margin-top:16px;width:100%;padding:11px">Abend zurücksetzen</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { MOODS, api, el, renderVibe, renderNow, toast } from "/shared.js";
+    const $ = (id) => document.getElementById(id);
+
+    $("logout").onclick = async () => { await api("/api/logout", { method: "POST" }); location.reload(); };
+    $("reset").onclick = async () => { if (confirm("Wirklich alle Wünsche löschen?")) { await api("/api/reset", { method: "POST" }); refresh(); } };
+
+    async function act(path, body) {
+      const { ok, status, data } = await api(path, { method: "POST", body: body ? JSON.stringify(body) : undefined });
+      if (!ok) {
+        if (data.error === "no_device") toast("Kein aktives Spotify-Gerät. Öffne Spotify und starte kurz die Wiedergabe.");
+        else if (data.error === "premium_required") toast("Dafür braucht das DJ-Konto Spotify Premium.");
+        else toast("Fehler: " + (data.error?.error?.message || data.error || status));
+      }
+      refresh();
+    }
+
+    async function loadDevices() {
+      const { ok, data } = await api("/api/devices");
+      const bar = $("device-bar");
+      bar.innerHTML = "";
+      if (!ok || !data.devices) return;
+      const active = data.devices.find((d) => d.is_active);
+      const label = el("span", { class: "muted", style: "font-size:12.5px;margin-right:8px" },
+        active ? `Gerät: ${active.name}` : "Kein aktives Gerät");
+      bar.append(label);
+      for (const d of data.devices) {
+        if (d.is_active) continue;
+        bar.append(el("button", { class: "btn ghost", style: "font-size:12px;padding:5px 10px;margin-right:6px",
+          onclick: async () => { await api("/api/transfer", { method: "PUT", body: JSON.stringify({ device_id: d.id }) }); loadDevices(); } }, "→ " + d.name));
+      }
+    }
+
+    const mmss = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+
+    function renderPlaybar(data) {
+      const bar = $("playbar");
+      bar.innerHTML = "";
+      const pb = data.playback || {};
+      const on = !!data.autoAdvance;
+
+      const toggle = el("button", { class: on ? "btn gold" : "btn ghost", style: "font-size:12px;padding:6px 12px",
+        onclick: async () => { await api("/api/auto", { method: "POST", body: JSON.stringify({ on: !on }) }); refresh(); } },
+        (on ? "● " : "○ ") + "Auto-Advance " + (on ? "an" : "aus"));
+
+      var onFill = !!data.autoFill;
+      const fillToggle = el("button", { class: onFill ? "btn gold" : "btn ghost", style: "font-size:12px;padding:6px 12px",
+        onclick: async () => { await api("/api/autofill", { method: "POST", body: JSON.stringify({ on: !onFill }) }); refresh(); } },
+        (onFill ? "● " : "○ ") + "Auto-Fill " + (onFill ? "an" : "aus"));
+
+      let info;
+      if (pb.duration > 0) {
+        const remaining = pb.duration - pb.progress;
+        const armed = on && remaining <= 12000;
+        info = el("span", { class: "muted", style: "font-size:12.5px" },
+          (pb.is_playing ? "läuft · " : "pausiert · ") + "noch " + mmss(remaining) + (armed ? " · schiebt gleich nach" : ""));
+      } else {
+        info = el("span", { class: "muted", style: "font-size:12.5px" }, "Spotify inaktiv — starte einen Song mit ▶");
+      }
+
+      bar.append(el("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" }, toggle, fillToggle));
+      bar.append(el("div", { style: "margin-top:6px" }, info));
+
+      if (pb.duration > 0) {
+        bar.append(el("div", { class: "bar-track", style: "margin-top:8px" },
+          el("div", { class: "bar-fill", style: `width:${Math.min(100, (pb.progress / pb.duration) * 100)}%;background:var(--gold)` })));
+      }
+    }
+
+    async function refresh() {
+      const { data: auth } = await api("/api/auth-status");
+      if (!auth.loggedIn) { $("gate").style.display = ""; $("console").style.display = "none"; $("logout").style.display = "none"; return; }
+      $("gate").style.display = "none"; $("console").style.display = ""; $("logout").style.display = "";
+
+      const { data } = await api("/api/state");
+      renderVibe($("vibe"), data.vibe, true);
+      renderNow($("now"), data.nowPlaying);
+      renderPlaybar(data);
+
+      const pending = data.requests.filter((r) => r.status === "pending").sort((a, b) => b.weight - a.weight || a.ts - b.ts);
+      const queue = data.requests.filter((r) => r.status === "queued" && r.id !== data.nowPlaying?.id).sort((a, b) => (a.order || 0) - (b.order || 0));
+
+      $("p-count").textContent = pending.length;
+      const pc = $("pending"); pc.innerHTML = "";
+      if (!pending.length) pc.append(el("div", { class: "empty" }, "Alle Wünsche bearbeitet."));
+      for (const r of pending) {
+        pc.append(el("div", { class: "row" },
+          el("div", { style: "min-width:0;flex:1" },
+            el("div", { class: "truncate", style: "font-weight:600" }, r.title),
+            el("div", { class: "truncate muted", style: "font-size:12.5px" }, `${r.artist} · ${MOODS[r.mood].emoji} ${r.mood} · von ${r.addedBy} · ♥ ${r.weight}`)),
+          el("button", { class: "btn ghost", title: "Ablehnen", onclick: () => act(`/api/requests/${r.id}/reject`) }, "✕"),
+          el("button", { class: "btn gold", onclick: () => act(`/api/requests/${r.id}/approve`) }, "✓ Freigeben")));
+      }
+
+      $("q-count").textContent = queue.length;
+      const qc = $("queue"); qc.innerHTML = "";
+      if (!queue.length) qc.append(el("div", { class: "empty" }, "Queue ist leer. Gib Wünsche frei, dann landen sie hier."));
+      queue.forEach((r, i) => {
+        const upDown = el("div", { style: "display:flex;flex-direction:column;gap:2px" },
+          el("button", { class: "btn ghost", style: "padding:1px 5px;font-size:10px", disabled: i === 0 ? "" : null, onclick: () => act(`/api/requests/${r.id}/move`, { dir: "up" }) }, "▲"),
+          el("button", { class: "btn ghost", style: "padding:1px 5px;font-size:10px", disabled: i === queue.length - 1 ? "" : null, onclick: () => act(`/api/requests/${r.id}/move`, { dir: "down" }) }, "▼"));
+        const title = el("div", { style: "display:flex;align-items:center;gap:8px" },
+          el("span", { class: "truncate", style: "font-weight:600" }, r.title),
+          r.auto ? el("span", { class: "badge", style: `background:${MOODS[r.mood].color}` }, "auto") : null,
+          r.sent ? el("span", { class: "badge", style: "background:var(--border);color:var(--dim)" }, "gesendet") : null);
+        qc.append(el("div", { class: "row" }, upDown,
+          el("div", { style: "width:18px;color:var(--dim);font-family:var(--display);font-size:16px" }, i + 1),
+          el("div", { style: "min-width:0;flex:1" }, title,
+            el("div", { class: "truncate muted", style: "font-size:12.5px" }, `${r.artist} · ${MOODS[r.mood].emoji} ${r.mood} · ♥ ${r.weight}`)),
+          el("button", { class: "btn ghost", title: "Entfernen", onclick: () => act(`/api/requests/${r.id}/reject`) }, "✕"),
+          el("button", { class: "btn", title: r.sent ? "Bereits in Spotify" : "In die Spotify-Queue schieben", disabled: r.sent ? "" : null, onclick: r.sent ? null : () => act(`/api/requests/${r.id}/push`) }, "→ Spotify"),
+          el("button", { class: "btn gold", title: "Sofort abspielen", onclick: () => act(`/api/requests/${r.id}/playnow`) }, "▶")));
+      });
+
+      loadDevices();
+    }
+
+    refresh();
+    setInterval(refresh, 3500);
+  </script>
+</body>
+</html>

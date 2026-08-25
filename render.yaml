@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: dj-bazooki
+    runtime: node
+    plan: free            # fuer den Hochzeitstag im Dashboard auf "Starter" (immer an) stellen
+    buildCommand: npm ci
+    startCommand: node server.js
+    autoDeploy: true
+    envVars:
+      - key: SPOTIFY_CLIENT_ID
+        sync: false        # im Render-Dashboard eintragen
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
+      - key: SPOTIFY_REDIRECT_URI
+        sync: false        # z.B. https://dj-bazooki.onrender.com/callback
+      - key: PUBLIC_URL
+        sync: false        # z.B. https://dj-bazooki.onrender.com
+      - key: MARKET
+        value: CH
