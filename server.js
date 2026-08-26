@@ -40,19 +40,25 @@ const HOUR = 3600000;
 const LIMIT = 3; // Wuensche pro Gast und Stunde
 const MOOD_NAMES = ["Party-Charts", "80er/90er", "Schlager", "Rock", "HipHop/RnB", "House/EDM", "Slow/Love", "Mundart"];
 const DIRECTION_WINDOW = 120 * 60000; // Richtungs-Stimmen zaehlen 2h, damit die Stimmung aktuell bleibt
-const MIN_QUEUE = 2;                   // so viele kommende Songs haelt Auto-Fill mindestens bereit
+const MIN_QUEUE = 2;                   // (Legacy) frueher: Nachschieb-Schwelle; jetzt via POOL_FLOOR
+
+// --- Autonomer DJ: Richtung stabil halten & Wunsch/Pool mischen ---
+const MIN_DWELL_MS = 15 * 60000; // Richtung wird mind. 15 Min gehalten, bevor sie wechseln darf
+const SWITCH_MARGIN = 1.5;       // Neue Richtung muss 1.5x staerker sein als die aktuelle, sonst kein Wechsel
+const POOL_FLOOR = 3;            // so viele kommende Pool-Songs immer bereithalten
+const WISH_EVERY = 3;            // 1 Gastwunsch je WISH_EVERY Songs -> Verhaeltnis Wunsch:Pool = 1:2
 
 // Kuratierte Publikumshits pro Richtung. Werden per Spotify-Suche zu echten Tracks aufgeloest.
 // Frei anpassbar: Zeilen sind einfach "Titel Interpret".
 const MOOD_POOL = {
-  "Party-Charts": ["Uptown Funk Bruno Mars", "Levitating Dua Lipa", "Blinding Lights The Weeknd", "Can't Stop the Feeling Justin Timberlake", "Party Rock Anthem LMFAO", "Shut Up and Dance Walk the Moon", "I Gotta Feeling Black Eyed Peas", "Cheap Thrills Sia"],
-  "80er/90er": ["Dancing Queen ABBA", "Take On Me a-ha", "Sweet Dreams Eurythmics", "I Wanna Dance with Somebody Whitney Houston", "Wonderwall Oasis", "Billie Jean Michael Jackson", "Africa Toto", "Blue Da Ba Dee Eiffel 65"],
-  "Schlager": ["Atemlos durch die Nacht Helene Fischer", "Griechischer Wein Udo Jürgens", "Ein Stern DJ Ötzi", "Cordula Grün Josh", "1000 und 1 Nacht Klaus Lage", "Marmor Stein und Eisen Drafi Deutscher", "Anton aus Tirol DJ Ötzi", "Hulapalu Andreas Gabalier"],
-  "Rock": ["Livin' on a Prayer Bon Jovi", "Summer of 69 Bryan Adams", "Highway to Hell AC/DC", "Sweet Child o Mine Guns N Roses", "Mr Brightside The Killers", "Don't Stop Believin Journey", "Seven Nation Army White Stripes", "Basket Case Green Day"],
-  "HipHop/RnB": ["Yeah Usher", "In Da Club 50 Cent", "Hey Ya OutKast", "Old Town Road Lil Nas X", "No Diggity Blackstreet", "Crazy in Love Beyonce", "Hips Don't Lie Shakira", "Get Lucky Daft Punk"],
-  "House/EDM": ["One More Time Daft Punk", "Titanium David Guetta Sia", "Wake Me Up Avicii", "Don't You Worry Child Swedish House Mafia", "Levels Avicii", "Animals Martin Garrix", "This Is What You Came For Calvin Harris", "Clarity Zedd"],
-  "Slow/Love": ["Perfect Ed Sheeran", "Can't Help Falling in Love Elvis Presley", "All of Me John Legend", "Thinking Out Loud Ed Sheeran", "Your Song Elton John", "Make You Feel My Love Adele", "At Last Etta James", "Marry You Bruno Mars"],
-  "Mundart": ["079 Lo & Leduc", "W. Nuss vo Bümpliz Patent Ochsner", "Ewigi Liäbi Mash", "Bring en hei Baschi", "Fingt di gäng Hecht", "Ke Summer 77 Bombay Street", "Uf u dervo Gölä", "Schwan Bligg"],
+  "Party-Charts": ["Uptown Funk Bruno Mars", "Levitating Dua Lipa", "Blinding Lights The Weeknd", "Can't Stop the Feeling Justin Timberlake", "Party Rock Anthem LMFAO", "Shut Up and Dance Walk the Moon", "I Gotta Feeling Black Eyed Peas", "Cheap Thrills Sia", "Happy Pharrell Williams", "Dynamite Taio Cruz", "Shake It Off Taylor Swift", "On the Floor Jennifer Lopez", "Timber Pitbull Kesha", "September Earth Wind and Fire", "Moves Like Jagger Maroon 5", "Sugar Maroon 5", "Waka Waka Shakira", "Don't Start Now Dua Lipa", "TiK ToK Kesha", "Firework Katy Perry"],
+  "80er/90er": ["Dancing Queen ABBA", "Take On Me a-ha", "Sweet Dreams Eurythmics", "I Wanna Dance with Somebody Whitney Houston", "Wonderwall Oasis", "Billie Jean Michael Jackson", "Africa Toto", "Blue Da Ba Dee Eiffel 65", "Girls Just Want to Have Fun Cyndi Lauper", "Livin on a Prayer Bon Jovi", "Total Eclipse of the Heart Bonnie Tyler", "Everybody Backstreet Boys", "Wannabe Spice Girls", "Barbie Girl Aqua", "The Final Countdown Europe", "You're the One That I Want John Travolta", "Footloose Kenny Loggins", "Never Gonna Give You Up Rick Astley", "Push It Salt-N-Pepa", "What Is Love Haddaway"],
+  "Schlager": ["Atemlos durch die Nacht Helene Fischer", "Griechischer Wein Udo Jürgens", "Ein Stern DJ Ötzi", "Cordula Grün Josh", "1000 und 1 Nacht Klaus Lage", "Marmor Stein und Eisen Drafi Deutscher", "Anton aus Tirol DJ Ötzi", "Hulapalu Andreas Gabalier", "Wahnsinn Wolfgang Petry", "Verdammt ich lieb dich Matthias Reim", "Ti Amo Howard Carpendale", "Skandal im Sperrbezirk Spider Murphy Gang", "Major Tom Peter Schilling", "Hölle Hölle Hölle Wolfgang Petry", "Mendocino Michael Holm", "Fürstenfeld STS", "Sierra Madre Zillertaler", "Wir sind wir Peter Wackel", "Layla DJ Robin Schürze", "Joana Roland Kaiser"],
+  "Rock": ["Livin' on a Prayer Bon Jovi", "Summer of 69 Bryan Adams", "Highway to Hell AC/DC", "Sweet Child o Mine Guns N Roses", "Mr Brightside The Killers", "Don't Stop Believin Journey", "Seven Nation Army White Stripes", "Basket Case Green Day", "You Shook Me All Night Long AC/DC", "I Love Rock n Roll Joan Jett", "Smells Like Teen Spirit Nirvana", "Wonderwall Oasis", "Zombie The Cranberries", "Song 2 Blur", "Are You Gonna Be My Girl Jet", "Bohemian Rhapsody Queen", "We Will Rock You Queen", "Should I Stay or Should I Go The Clash", "American Idiot Green Day", "The Reason Hoobastank"],
+  "HipHop/RnB": ["Yeah Usher", "In Da Club 50 Cent", "Hey Ya OutKast", "Old Town Road Lil Nas X", "No Diggity Blackstreet", "Crazy in Love Beyonce", "Hips Don't Lie Shakira", "Get Lucky Daft Punk", "Gold Digger Kanye West", "Hot in Herre Nelly", "Jump Around House of Pain", "California Love 2Pac", "SexyBack Justin Timberlake", "Umbrella Rihanna", "Ignition Remix R Kelly", "Empire State of Mind Jay-Z Alicia Keys", "Nice for What Drake", "Uptown Funk Bruno Mars", "This Is How We Do It Montell Jordan", "Low Flo Rida"],
+  "House/EDM": ["One More Time Daft Punk", "Titanium David Guetta Sia", "Wake Me Up Avicii", "Don't You Worry Child Swedish House Mafia", "Levels Avicii", "Animals Martin Garrix", "This Is What You Came For Calvin Harris", "Clarity Zedd", "Summer Calvin Harris", "Silhouettes Avicii", "Turn Down for What DJ Snake", "Where Them Girls At David Guetta", "Reload Sebastian Ingrosso Tommy Trash", "Faded Alan Walker", "Lean On Major Lazer", "The Middle Zedd", "Sweet Nothing Calvin Harris", "Hey Brother Avicii", "Feel So Close Calvin Harris", "Firestone Kygo"],
+  "Slow/Love": ["Perfect Ed Sheeran", "Can't Help Falling in Love Elvis Presley", "All of Me John Legend", "Thinking Out Loud Ed Sheeran", "Your Song Elton John", "Make You Feel My Love Adele", "At Last Etta James", "Marry You Bruno Mars", "A Thousand Years Christina Perri", "Wonderful Tonight Eric Clapton", "Everything Michael Bublé", "Say You Won't Let Go James Arthur", "You Are the Best Thing Ray LaMontagne", "Lucky Jason Mraz Colbie Caillat", "Just the Way You Are Bruno Mars", "Endless Love Diana Ross", "Unchained Melody Righteous Brothers", "Have I Told You Lately Van Morrison", "Kiss Me Sixpence None the Richer", "I Don't Want to Miss a Thing Aerosmith"],
+  "Mundart": ["079 Lo & Leduc", "W. Nuss vo Bümpliz Patent Ochsner", "Ewigi Liäbi Mash", "Bring en hei Baschi", "Fingt di gäng Hecht", "Ke Summer 77 Bombay Street", "Uf u dervo Gölä", "Schwan Bligg", "Marlène Stephan Eicher", "Hemmige Stephan Eicher", "Manhattan Trauffer", "Alperose Polo Hofer", "Kiosk Trauffer", "Heidi Trauffer", "Dr Alpeflug Baschi", "I schänke dir mis Härz Züri West", "Für immer uf di Kunz", "Summer Kunz", "Butterfly Trauffer", "Meh weder Gäld Dodo"],
 };
 
 /* ===================== Automatisches Richtungs-Mapping ======================
@@ -168,7 +174,7 @@ async function classifyTrack(track) {
 
 /* ----------------------------- persistente State ----------------------------- */
 const DB_FILE = join(process.env.DATA_DIR || __dirname, "data.json");
-const emptyState = () => ({ requests: [], nowPlaying: null, log: [], autoAdvance: true, autoFill: true, autoApprove: true, directions: [] });
+const emptyState = () => ({ requests: [], nowPlaying: null, log: [], autoAdvance: true, autoFill: true, autoApprove: true, directions: [], committedDirection: null });
 let state = emptyState();
 try {
   if (existsSync(DB_FILE)) state = { ...emptyState(), ...JSON.parse(readFileSync(DB_FILE, "utf8")) };
@@ -187,7 +193,7 @@ let appToken = { value: null, expires: 0 }; // Client-Credentials fuer Gaeste-Su
 
 // Auto-Advance: beobachtet den laufenden Song und schiebt den naechsten nach.
 const AUTO_THRESHOLD_MS = 30000; // so viel vor Songende wird nachgeschoben
-let auto = { pushedForUri: null };
+let auto = { pushedForUri: null, slot: 0 };
 let playback = { is_playing: false, uri: null, title: null, artist: null, progress: 0, duration: 0, ts: 0 };
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -274,6 +280,77 @@ function queueSort(a, b) {
 // Naechste freie order am Ende der Queue.
 function nextOrder() {
   return state.requests.filter((x) => x.status === "queued").reduce((m, x) => Math.max(m, x.order || 0), 0) + 1;
+}
+
+/* --------------------- Autonome Richtungs-Steuerung --------------------- */
+// Legt die aktuelle Richtung fest und wechselt sie nur traege:
+// - erst nach MIN_DWELL_MS (15 Min) in der aktuellen Richtung
+// - und nur, wenn die neue Richtung klar (SWITCH_MARGIN = 1.5x) vorne liegt.
+// So dreht die Musik nicht nach jedem einzelnen Wunsch, sondern bleibt bei einer Stimmung.
+function updateCommittedDirection() {
+  const vibe = computeVibe();
+  if (!vibe.dominant) return; // keine Signale -> Richtung unveraendert lassen
+  const now = Date.now();
+  const cur = state.committedDirection;
+
+  if (!cur || !cur.mood) {                       // noch keine Richtung -> jetzt festlegen
+    state.committedDirection = { mood: vibe.dominant, since: now };
+    persist();
+    return;
+  }
+  if (cur.mood === vibe.dominant) return;         // Fuehrende Richtung ist schon die aktuelle
+
+  const curRow = vibe.rows.find((r) => r.mood === cur.mood);
+  const curWeight = curRow ? curRow.weight : 0;
+  const challenger = vibe.rows.find((r) => r.mood !== cur.mood); // = dominante andere Richtung
+  if (!challenger) return;
+
+  const dwellOk = now - (cur.since || 0) >= MIN_DWELL_MS;
+  const clearlyAhead = challenger.weight >= curWeight * SWITCH_MARGIN;
+  if (dwellOk && clearlyAhead) {
+    state.committedDirection = { mood: challenger.mood, since: now };
+    persist();
+  }
+}
+
+// Aktuelle Richtung fuer Auto-Fill (fallback: Live-Vibe, sonst null).
+function currentMood() {
+  return state.committedDirection?.mood || computeVibe().dominant || null;
+}
+
+// Fisher-Yates-Shuffle (fuer abwechslungsreiche Pool-Auswahl).
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Waehlt den naechsten Song fuers Auto-Advance nach dem Mischverhaeltnis 1:2.
+//   - DJ-Pins haben immer Vorrang und zaehlen NICHT ins Verhaeltnis (manuelle Uebersteuerung).
+//   - Sonst: jeder WISH_EVERY-te Slot ist ein Gastwunsch, dazwischen Pool-Songs.
+//   - Faellt eine Seite leer aus, wird die andere genommen (nie Stille).
+// Rueckgabe: { track, counts } – counts=true, wenn der Song das Verhaeltnis weiterzaehlt.
+function pickNextForQueue() {
+  const queued = state.requests.filter((r) => r.status === "queued" && !r.sent);
+  if (!queued.length) return null;
+
+  const pins = queued.filter((r) => r.pinned).sort((a, b) => (a.order || 0) - (b.order || 0));
+  if (pins.length) return { track: pins[0], counts: false };
+
+  const wishes = queued
+    .filter((r) => !r.auto && !r.dj)
+    .sort((a, b) => likeCount(b) - likeCount(a) || (a.order || 0) - (b.order || 0));
+  const pools = queued
+    .filter((r) => r.auto)
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+  const wantWish = auto.slot % WISH_EVERY === 0; // Slot 0,3,6,... = Wunsch -> 1 Wunsch : 2 Pool
+  let track = wantWish ? wishes[0] || pools[0] : pools[0] || wishes[0];
+  if (!track) track = queued.slice().sort(queueSort)[0];
+  return { track, counts: true };
 }
 
 /* ----------------------------- App ----------------------------- */
@@ -363,6 +440,7 @@ app.get("/api/state", (_req, res) => {
     autoApprove: state.autoApprove,
     playback,
     vibe: computeVibe(),
+    committedDirection: state.committedDirection || null,
     directions: state.directions || [],
     requests: state.requests.map((r) => ({ ...r, weight: 1 + (r.voterIds?.length || 0) })),
   });
@@ -618,32 +696,44 @@ async function resolveTrack(query) {
   return val;
 }
 
-// Wenn eine Richtung dominiert und die Queue duenn wird, passenden Song automatisch nachlegen.
+// Haelt in der aktuellen (festgelegten) Richtung immer >= POOL_FLOOR Pool-Songs bereit.
+// Wichtig fuers 1:2-Mischverhaeltnis: es muessen genug Pool-Songs da sein, damit
+// zwischen den Wuenschen wirklich zwei Pool-Songs laufen koennen. Fuellt in EINEM
+// Durchlauf auf (nicht nur einer pro Tick) und waehlt zufaellig -> keine Wiederholungen,
+// keine feste Reihenfolge. Bereits (auch frueher) verwendete URIs werden uebersprungen.
 async function autoFillMaybe() {
   if (!state.autoFill) return;
-  const vibe = computeVibe();
-  if (!vibe.dominant) return;
-  const upcoming = state.requests.filter((r) => r.status === "queued" && r.id !== state.nowPlaying?.id).length;
-  if (upcoming >= MIN_QUEUE) return;
-  const pool = MOOD_POOL[vibe.dominant] || [];
+  const mood = currentMood();
+  if (!mood) return;
+  const upcomingPool = state.requests.filter(
+    (r) => r.status === "queued" && r.auto && !r.sent && r.id !== state.nowPlaying?.id
+  ).length;
+  let need = POOL_FLOOR - upcomingPool;
+  if (need <= 0) return;
+
   const usedUris = new Set(state.requests.map((r) => r.uri));
+  const pool = shuffle(MOOD_POOL[mood] || []);
+  let added = false;
   for (const q of pool) {
+    if (need <= 0) break;
     const t = await resolveTrack(q);
     if (!t || usedUris.has(t.uri)) continue;
+    usedUris.add(t.uri);
     const maxOrder = state.requests.filter((x) => x.status === "queued").reduce((m, x) => Math.max(m, x.order || 0), 0);
     state.requests.push({
       id: uid(), uri: t.uri, trackId: t.trackId, title: t.title, artist: t.artist, image: t.image,
-      mood: vibe.dominant, status: "queued", order: maxOrder + 1, voterIds: [],
+      mood, status: "queued", order: maxOrder + 1, voterIds: [],
       addedBy: "DJ BazooKI", byId: "system", auto: true, ts: Date.now(),
     });
-    persist();
-    return; // nur einer pro Durchlauf
+    need--; added = true;
   }
+  if (added) persist();
 }
 
 /* ----------------------------- Auto-Advance-Loop ----------------------------- */
 // Alle 5s: laufenden Song lesen, nowPlaying abgleichen, ggf. naechsten nachschieben.
 async function tick() {
+  try { updateCommittedDirection(); } catch {}
   try { await autoFillMaybe(); } catch {}
   if (!dj.access) return;
   let cur;
@@ -682,13 +772,16 @@ async function tick() {
   if (state.autoAdvance && playback.is_playing && playback.duration > 0) {
     const remaining = playback.duration - playback.progress;
     if (remaining <= AUTO_THRESHOLD_MS && auto.pushedForUri !== uri) {
-      const next = state.requests
-        .filter((r) => r.status === "queued" && !r.sent)
-        .sort(queueSort)[0];
-      if (next) {
+      const pick = pickNextForQueue();
+      if (pick?.track) {
         try {
-          const resp = await djFetch("/me/player/queue?" + new URLSearchParams({ uri: next.uri }), { method: "POST" });
-          if (resp.status === 204) { next.sent = true; auto.pushedForUri = uri; persist(); }
+          const resp = await djFetch("/me/player/queue?" + new URLSearchParams({ uri: pick.track.uri }), { method: "POST" });
+          if (resp.status === 204) {
+            pick.track.sent = true;
+            auto.pushedForUri = uri;
+            if (pick.counts) auto.slot += 1; // nur echte Wunsch/Pool-Slots zaehlen fuers Verhaeltnis
+            persist();
+          }
         } catch {}
       }
     }
