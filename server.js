@@ -75,7 +75,7 @@ let dj = { access: null, refresh: null, expires: 0 };
 let appToken = { value: null, expires: 0 }; // Client-Credentials fuer Gaeste-Suche
 
 // Auto-Advance: beobachtet den laufenden Song und schiebt den naechsten nach.
-const AUTO_THRESHOLD_MS = 30000; // so viel vor Songende wird nachgeschoben
+const AUTO_THRESHOLD_MS = 12000; // so viel vor Songende wird nachgeschoben
 let auto = { pushedForUri: null };
 let playback = { is_playing: false, uri: null, title: null, artist: null, progress: 0, duration: 0, ts: 0 };
 
@@ -284,6 +284,15 @@ app.post("/api/requests", (req, res) => {
   const now = Date.now();
   if (state.requests.some((r) => r.uri === track.uri && r.status !== "played"))
     return res.status(409).json({ error: "schon auf der Wunschliste" });
+  // Gleicher Song nur einmal pro Stunde: juengsten Wunsch fuer diese URI suchen
+  // (auch bereits gespielte Eintraege zaehlen) und innerhalb einer Stunde sperren.
+  const lastSameUri = state.requests
+    .filter((r) => r.uri === track.uri)
+    .reduce((m, r) => Math.max(m, r.ts || 0), 0);
+  if (lastSameUri && now - lastSameUri < HOUR) {
+    const nextMin = Math.max(1, Math.ceil((lastSameUri + HOUR - now) / 60000));
+    return res.status(429).json({ error: "song_cooldown", nextMin });
+  }
   const times = myTimes(guestId, now);
   if (times.length >= LIMIT) {
     const nextMin = Math.max(1, Math.ceil((times[0] + HOUR - now) / 60000));

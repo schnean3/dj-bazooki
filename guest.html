@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>DJ BazooKI — Wünsch dir was</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="crest">
+      <div class="monogram">C&nbsp;+&nbsp;D</div>
+      <div class="couple">Caro &amp; Daniel</div>
+      <svg class="sprig" width="120" height="26" viewBox="0 0 120 26" fill="none" aria-hidden="true">
+        <g stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity=".55">
+          <line x1="6" y1="13" x2="46" y2="13" /><line x1="74" y1="13" x2="114" y2="13" />
+        </g>
+        <g fill="currentColor">
+          <path d="M60 4 C57 8 57 12 60 15 C63 12 63 8 60 4Z"/>
+          <ellipse cx="54" cy="14" rx="4.5" ry="2.2" transform="rotate(-25 54 14)"/>
+          <ellipse cx="66" cy="14" rx="4.5" ry="2.2" transform="rotate(25 66 14)"/>
+          <ellipse cx="57" cy="19" rx="4" ry="2" transform="rotate(-20 57 19)"/>
+          <ellipse cx="63" cy="19" rx="4" ry="2" transform="rotate(20 63 19)"/>
+        </g>
+      </svg>
+      <div class="date">5. September 2026</div>
+      <div class="toolname">Musikwünsche mit <b>DJ BazooKI</b></div>
+    </div>
+
+    <div id="vibe" class="vibe"></div>
+    <div id="now" class="row now" style="margin-top:16px"></div>
+
+    <section style="margin-top:20px">
+      <div class="section-head">Wähl eine Richtung</div>
+      <p class="muted" style="font-size:13px;margin:-6px 0 10px">Sag dem DJ, worauf du gerade Lust hast. Zählt nicht gegen deine Wünsche.</p>
+      <div id="dir-chips" class="chips"></div>
+    </section>
+
+    <section style="margin-top:20px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <div class="section-head">Oder wünsch dir ein Lied</div>
+        <div id="remaining" style="font-size:12.5px;font-weight:600;color:var(--gold)"></div>
+      </div>
+      <input id="q" class="input" placeholder="Song oder Künstler suchen…" autocomplete="off" />
+      <div id="results" class="grid"></div>
+    </section>
+
+    <section style="margin-top:20px">
+      <div class="section-head">Wunschliste (<span id="wl-count">0</span>)</div>
+      <div id="wishlist" style="display:flex;flex-direction:column;gap:8px"></div>
+    </section>
+  </div>
+
+  <div id="modal-root"></div>
+
+  <script type="module">
+    import { MOODS, guestId, guestName, setGuestName, api, el, renderVibe, renderNow, toast } from "/shared.js";
+
+    const gid = guestId();
+    if (!guestName()) {
+      const n = prompt("Wie heisst du? (erscheint bei deinen Wünschen)", "");
+      if (n) setGuestName(n.trim());
+    }
+
+    const $ = (id) => document.getElementById(id);
+    let pendingTrack = null;
+
+    // --- Suche (debounced) ---
+    let searchTimer = null;
+    $("q").addEventListener("input", (e) => {
+      clearTimeout(searchTimer);
+      const q = e.target.value.trim();
+      searchTimer = setTimeout(() => doSearch(q), 300);
+    });
+
+    async function doSearch(q) {
+      const box = $("results");
+      if (!q) { box.innerHTML = ""; return; }
+      const { data } = await api("/api/search?q=" + encodeURIComponent(q));
+      box.innerHTML = "";
+      for (const t of data.tracks || []) {
+        box.append(el("button", { class: "card", style: "cursor:pointer;text-align:left", onclick: () => openMood(t) },
+          el("div", { class: "truncate", style: "font-weight:600" }, t.title),
+          el("div", { class: "truncate muted", style: "font-size:12.5px" }, t.artist)));
+      }
+      if (!(data.tracks || []).length) box.append(el("div", { class: "empty" }, "Nichts gefunden. Anders schreiben?"));
+    }
+
+    // --- Mood-Auswahl beim Wünschen ---
+    function openMood(track) {
+      pendingTrack = track;
+      const root = $("modal-root");
+      const chips = el("div", { class: "chips" });
+      for (const [name, m] of Object.entries(MOODS)) {
+        chips.append(el("button", { class: "chip", onclick: () => submit(name) }, `${m.emoji} ${name}`));
+      }
+      root.innerHTML = "";
+      root.append(el("div", { class: "overlay", onclick: (e) => { if (e.target.classList.contains("overlay")) root.innerHTML = ""; } },
+        el("div", { class: "modal" },
+          el("div", { class: "muted eyebrow" }, "Dein Wunsch"),
+          el("div", { style: "font-weight:600;font-size:17px;margin:4px 0 2px" }, track.title),
+          el("div", { class: "muted", style: "font-size:13px" }, track.artist),
+          el("div", { style: "margin-top:14px;font-size:13.5px" }, "In welche Richtung passt der Song?"),
+          chips)));
+    }
+
+    async function submit(mood) {
+      $("modal-root").innerHTML = "";
+      const { ok, status, data } = await api("/api/requests", {
+        method: "POST",
+        body: JSON.stringify({ guestId: gid, name: guestName(), track: pendingTrack, mood }),
+      });
+      if (ok) { toast(data.queued ? `„${pendingTrack.title}" ist in der Queue 🎶` : `„${pendingTrack.title}" gewünscht — wartet auf DJ-Freigabe 🎶`); $("q").value = ""; $("results").innerHTML = ""; refresh(); }
+      else if (status === 429 && data.error === "song_cooldown") toast(`Dieses Lied wurde gerade schon gewünscht — wieder möglich in ${data.nextMin} Min.`);
+      else if (status === 429) toast(`Limit erreicht. Nächster Wunsch in ${data.nextMin} Min.`);
+      else if (status === 409) toast("Schon auf der Wunschliste — gib ihm ein Herz ♥");
+      else toast("Hat nicht geklappt: " + (data.error || status));
+    }
+
+    async function vote(id) {
+      await api(`/api/requests/${id}/vote`, { method: "POST", body: JSON.stringify({ guestId: gid }) });
+      refresh();
+    }
+
+    // --- Richtung wählen ---
+    async function setDirection(mood) {
+      await api("/api/direction", { method: "POST", body: JSON.stringify({ guestId: gid, mood }) });
+      if (mood) toast(`Richtung gesetzt: ${MOODS[mood].emoji} ${mood}`);
+      refresh();
+    }
+    function renderDirections(dirs) {
+      const mine = (dirs || []).find((d) => d.byId === gid);
+      const box = $("dir-chips");
+      box.innerHTML = "";
+      for (const [name, m] of Object.entries(MOODS)) {
+        const active = mine && mine.mood === name;
+        box.append(el("button", {
+          class: "chip",
+          style: active ? `background:${m.color};color:#3a2f1c;border-color:${m.color}` : "",
+          onclick: () => setDirection(active ? null : name),
+        }, `${m.emoji} ${name}` + (active ? "  ✕" : "")));
+      }
+    }
+
+    // --- Polling / Render ---
+    async function refresh() {
+      const { data } = await api("/api/state");
+      renderVibe($("vibe"), data.vibe, false);
+      renderNow($("now"), data.nowPlaying);
+      renderDirections(data.directions);
+
+      const active = data.requests.filter((r) => r.status !== "played").sort((a, b) => b.weight - a.weight || a.ts - b.ts);
+      $("wl-count").textContent = active.length;
+      const wl = $("wishlist");
+      wl.innerHTML = "";
+      if (!active.length) wl.append(el("div", { class: "empty" }, "Noch leer. Sei die erste Person mit einem Wunsch."));
+      for (const r of active) {
+        const mine = r.byId === gid;
+        const voted = mine || r.voterIds.includes(gid);
+        const playing = data.nowPlaying?.id === r.id;
+        const badge = playing
+          ? el("span", { class: "badge", style: "background:var(--gold)" }, "läuft")
+          : r.status === "queued"
+          ? el("span", { class: "badge", style: `background:${MOODS[r.mood].color}` }, "in Queue")
+          : el("span", { class: "badge", style: "background:var(--border);color:var(--dim)" }, "wartet");
+        wl.append(el("div", { class: "row" },
+          el("div", { style: "min-width:0;flex:1" },
+            el("div", { style: "display:flex;align-items:center;gap:8px" },
+              el("span", { class: "truncate", style: "font-weight:600" }, r.title), badge),
+            el("div", { class: "truncate muted", style: "font-size:12.5px" }, `${r.artist} · ${MOODS[r.mood].emoji} ${r.mood} · von ${mine ? "dir" : r.addedBy}`)),
+          el("button", { class: "pill", style: voted ? `color:${MOODS[r.mood].color};border-color:${MOODS[r.mood].color}66` : "", disabled: voted ? "" : null, onclick: voted ? null : () => vote(r.id) }, `♥ ${r.weight}`)));
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 3500);
+  </script>
+</body>
+</html>
