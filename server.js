@@ -24,6 +24,9 @@ const {
   SPOTIFY_REDIRECT_URI = "http://127.0.0.1:8888/callback",
   PORT = 8888,
   MARKET = "CH",
+  // Playlist, aus der der Auto-Fill-Pool gebaut wird. Muss oeffentlich lesbar sein,
+  // dann reicht der App-Token. Leer lassen => Fallback auf MOOD_POOL weiter unten.
+  SPOTIFY_PLAYLIST_ID = "7n18x8ELn4t0tKS1cbiksl",
 } = process.env;
 
 if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
@@ -38,7 +41,11 @@ const SCOPES = [
 
 const HOUR = 3600000;
 const LIMIT = 3; // Wuensche pro Gast und Stunde
-const MOOD_NAMES = ["Party-Charts", "80er/90er", "Schlager", "Rock", "HipHop/RnB", "House/EDM", "Slow/Love", "Mundart"];
+const MOOD_NAMES = ["Party-Charts", "Latino", "Dancehall/Reggae", "Schlager", "Rock", "HipHop/RnB", "House/EDM", "Slow/Love", "Mundart"];
+
+// Richtungen, aus denen NICHT automatisch nachgeschoben wird. Slow/Love bleibt als
+// Gastwunsch erlaubt, wuerde als Auto-Fill aber die Tanzflaeche leerraeumen.
+const NO_AUTOFILL = new Set(["Slow/Love"]);
 const DIRECTION_WINDOW = 120 * 60000; // Richtungs-Stimmen zaehlen 2h, damit die Stimmung aktuell bleibt
 const MIN_QUEUE = 2;                   // (Legacy) frueher: Nachschieb-Schwelle; jetzt via POOL_FLOOR
 
@@ -51,8 +58,9 @@ const WISH_EVERY = 3;            // 1 Gastwunsch je WISH_EVERY Songs -> Verhaelt
 // Kuratierte Publikumshits pro Richtung. Werden per Spotify-Suche zu echten Tracks aufgeloest.
 // Frei anpassbar: Zeilen sind einfach "Titel Interpret".
 const MOOD_POOL = {
-  "Party-Charts": ["Uptown Funk Bruno Mars", "Levitating Dua Lipa", "Blinding Lights The Weeknd", "Can't Stop the Feeling Justin Timberlake", "Party Rock Anthem LMFAO", "Shut Up and Dance Walk the Moon", "I Gotta Feeling Black Eyed Peas", "Cheap Thrills Sia", "Happy Pharrell Williams", "Dynamite Taio Cruz", "Shake It Off Taylor Swift", "On the Floor Jennifer Lopez", "Timber Pitbull Kesha", "September Earth Wind and Fire", "Moves Like Jagger Maroon 5", "Sugar Maroon 5", "Waka Waka Shakira", "Don't Start Now Dua Lipa", "TiK ToK Kesha", "Firework Katy Perry"],
-  "80er/90er": ["Dancing Queen ABBA", "Take On Me a-ha", "Sweet Dreams Eurythmics", "I Wanna Dance with Somebody Whitney Houston", "Wonderwall Oasis", "Billie Jean Michael Jackson", "Africa Toto", "Blue Da Ba Dee Eiffel 65", "Girls Just Want to Have Fun Cyndi Lauper", "Livin on a Prayer Bon Jovi", "Total Eclipse of the Heart Bonnie Tyler", "Everybody Backstreet Boys", "Wannabe Spice Girls", "Barbie Girl Aqua", "The Final Countdown Europe", "You're the One That I Want John Travolta", "Footloose Kenny Loggins", "Never Gonna Give You Up Rick Astley", "Push It Salt-N-Pepa", "What Is Love Haddaway"],
+  "Party-Charts": ["Uptown Funk Bruno Mars", "Levitating Dua Lipa", "Blinding Lights The Weeknd", "Can't Stop the Feeling Justin Timberlake", "Party Rock Anthem LMFAO", "Shut Up and Dance Walk the Moon", "I Gotta Feeling Black Eyed Peas", "Cheap Thrills Sia", "Happy Pharrell Williams", "Dynamite Taio Cruz", "Shake It Off Taylor Swift", "On the Floor Jennifer Lopez", "Timber Pitbull Kesha", "September Earth Wind and Fire", "Moves Like Jagger Maroon 5", "Sugar Maroon 5", "Waka Waka Shakira", "Don't Start Now Dua Lipa", "TiK ToK Kesha", "Firework Katy Perry", "Dancing Queen ABBA", "Take On Me a-ha", "Sweet Dreams Eurythmics", "I Wanna Dance with Somebody Whitney Houston", "Billie Jean Michael Jackson", "Africa Toto", "Girls Just Want to Have Fun Cyndi Lauper", "Wannabe Spice Girls", "Never Gonna Give You Up Rick Astley", "Footloose Kenny Loggins"],
+  "Latino": ["Despacito Luis Fonsi Daddy Yankee", "Bailando Enrique Iglesias", "Vivir Mi Vida Marc Anthony", "Mi Gente J Balvin Willy William", "Taki Taki DJ Snake Ozuna Cardi B", "Con Calma Daddy Yankee Snow", "Tusa Karol G Nicki Minaj", "Provenza Karol G", "La Gozadera Gente de Zona Marc Anthony", "Ai Se Eu Te Pego Michel Telo", "Waka Waka Shakira", "Sofia Alvaro Soler", "Vente Pa Ca Ricky Martin Maluma", "Bailar Deorro Elvis Crespo", "Subeme la Radio Enrique Iglesias", "Felices los 4 Maluma", "Me Porto Bonito Bad Bunny Chencho Corleone", "Dakiti Bad Bunny Jhay Cortez", "Gasolina Daddy Yankee", "Danza Kuduro Don Omar Lucenzo"],
+  "Dancehall/Reggae": ["Temperature Sean Paul", "Get Busy Sean Paul", "Turn Me On Kevin Lyttle", "It Wasn't Me Shaggy", "Angel Shaggy", "Boombastic Shaggy", "Cheerleader OMI", "Rude MAGIC!", "Could You Be Loved Bob Marley", "Jamming Bob Marley", "Welcome to Jamrock Damian Marley", "Hold Yuh Gyptian", "Baby Boy Beyonce Sean Paul", "Ding Seeed", "Haus am See Peter Fox", "No Letting Go Wayne Wonder", "Miss Fatty Million Stylez", "Sweat A La La La Long Inner Circle", "Here Comes the Hotstepper Ini Kamoze", "Murder She Wrote Chaka Demus Pliers"],
   "Schlager": ["Atemlos durch die Nacht Helene Fischer", "Griechischer Wein Udo Jürgens", "Ein Stern DJ Ötzi", "Cordula Grün Josh", "1000 und 1 Nacht Klaus Lage", "Marmor Stein und Eisen Drafi Deutscher", "Anton aus Tirol DJ Ötzi", "Hulapalu Andreas Gabalier", "Wahnsinn Wolfgang Petry", "Verdammt ich lieb dich Matthias Reim", "Ti Amo Howard Carpendale", "Skandal im Sperrbezirk Spider Murphy Gang", "Major Tom Peter Schilling", "Hölle Hölle Hölle Wolfgang Petry", "Mendocino Michael Holm", "Fürstenfeld STS", "Sierra Madre Zillertaler", "Wir sind wir Peter Wackel", "Layla DJ Robin Schürze", "Joana Roland Kaiser"],
   "Rock": ["Livin' on a Prayer Bon Jovi", "Summer of 69 Bryan Adams", "Highway to Hell AC/DC", "Sweet Child o Mine Guns N Roses", "Mr Brightside The Killers", "Don't Stop Believin Journey", "Seven Nation Army White Stripes", "Basket Case Green Day", "You Shook Me All Night Long AC/DC", "I Love Rock n Roll Joan Jett", "Smells Like Teen Spirit Nirvana", "Wonderwall Oasis", "Zombie The Cranberries", "Song 2 Blur", "Are You Gonna Be My Girl Jet", "Bohemian Rhapsody Queen", "We Will Rock You Queen", "Should I Stay or Should I Go The Clash", "American Idiot Green Day", "The Reason Hoobastank"],
   "HipHop/RnB": ["Yeah Usher", "In Da Club 50 Cent", "Hey Ya OutKast", "Old Town Road Lil Nas X", "No Diggity Blackstreet", "Crazy in Love Beyonce", "Hips Don't Lie Shakira", "Get Lucky Daft Punk", "Gold Digger Kanye West", "Hot in Herre Nelly", "Jump Around House of Pain", "California Love 2Pac", "SexyBack Justin Timberlake", "Umbrella Rihanna", "Ignition Remix R Kelly", "Empire State of Mind Jay-Z Alicia Keys", "Nice for What Drake", "Uptown Funk Bruno Mars", "This Is How We Do It Montell Jordan", "Low Flo Rida"],
@@ -78,22 +86,42 @@ const MUNDART_ARTISTS = new Set([
   "trauffer","dodo","mash","kunz","zuri west","span","plusch","sina","stubete gang","kummerbuben",
   "stiller has","florian ast","stress","nemo","gotthard","zibbz","dabu fantastic","dabu fantastik",
   "marc sway","seven","pegasus","troubas kater","damian lynn",
+  "polo hofer","stephan eicher","hanery amman","zuri west","lo & leduc",
 ].map(norm));
 const SCHLAGER_ARTISTS = new Set([
   "helene fischer","andreas gabalier","dj otzi","udo jurgens","roland kaiser","beatrice egli",
   "wolfgang petry","andrea berg","semino rossi","mickie krause","vanessa mai","matthias reim",
   "howard carpendale","die amigos","ross antony","ikke huftgold","mia julia","nino de angelo",
   "kerstin ott","marianne rosenberg",
+  // Achtung: der Vergleich unten ist ein Teilstring-Match. "josh" allein wuerde auch
+  // "Josh Groban" zu Schlager machen, darum steht hier der Punkt aus "Josh." mit drin.
+  "josh.","spider murphy gang","peter schilling","dj robin","schurze","drafi deutscher",
+  "klaus lage","michael holm","sts","zillertaler","peter wackel","frenzy",
 ].map(norm));
 
 // Genre-Schluesselwoerter -> Richtung. Erster Treffer in dieser Reihenfolge gewinnt.
+//
+// ACHTUNG, die Reihenfolge ist nicht kosmetisch: verglichen wird mit gen.includes(k),
+// also Teilstrings. Daraus folgen echte Kollisionen, die nur die Reihenfolge aufloest:
+//   "reggaeton"   enthaelt "reggae"  -> Latino muss vor Dancehall stehen
+//   "trap latino" enthaelt "trap"    -> Latino muss vor HipHop/RnB stehen
+//   "latin house" enthaelt "house"   -> Latino muss vor House/EDM stehen
+//   "dubstep"     enthaelt "dub"     -> "dub" darf kein Dancehall-Keyword sein
+//   "roots rock"  enthaelt "roots"   -> "roots" darf kein Dancehall-Keyword sein
 const GENRE_RULES = [
-  ["Mundart",    ["mundart","swiss","schweizer","schwiizer"]],
-  ["Schlager",   ["schlager","volksmusik","volkstumlich","apres","ballermann","discofox","stimmung","austropop"]],
-  ["HipHop/RnB", ["hip hop","hip-hop","hiphop","rap","trap","r&b","rnb","urban contemporary","drill","grime","boom bap"]],
-  ["House/EDM",  ["house","techno","trance","edm","electro","eurodance","big room","future bass","dubstep","drum and bass","hardstyle","hands up","italo dance","tech house","deep house","rave"]],
-  ["Rock",       ["rock","metal","punk","grunge","hardcore","emo","thrash","grindcore"]],
+  ["Mundart",          ["mundart","swiss","schweizer","schwiizer"]],
+  ["Schlager",         ["schlager","volksmusik","volkstumlich","apres","ballermann","discofox","stimmung","austropop"]],
+  ["Latino",           ["latin","reggaeton","regueton","urbano","dembow","bachata","salsa","merengue","cumbia","kuduro","funk carioca","funk ostentacao","brazilian","brasil","mambo","perreo","sertanejo"]],
+  ["Dancehall/Reggae", ["dancehall","reggae","ragga","soca","ska"]],
+  ["HipHop/RnB",       ["hip hop","hip-hop","hiphop","rap","trap","r&b","rnb","urban contemporary","drill","grime","boom bap"]],
+  ["House/EDM",        ["house","techno","trance","edm","electro","eurodance","big room","future bass","dubstep","drum and bass","hardstyle","hands up","italo dance","tech house","deep house","rave"]],
+  ["Rock",             ["rock","metal","punk","grunge","hardcore","emo","thrash","grindcore"]],
 ];
+
+// Handkorrektur pro Spotify-Track-ID. Schlaegt alles andere.
+// Die ID steht im Share-Link: open.spotify.com/track/<ID>?si=...
+// Beispiel: "6habFhsOp2NvshLv26DqMb": "Latino",
+const MANUAL_MOOD = {};
 
 // Reine Zuordnung aus Signalen – ohne Netzwerk, daher gut testbar.
 function moodFromSignals({ genres = [], artistName = "", title = "", year = null, audio = null }) {
@@ -101,16 +129,20 @@ function moodFromSignals({ genres = [], artistName = "", title = "", year = null
   const a = norm(artistName);
   if ([...MUNDART_ARTISTS].some((x) => a.includes(x))) return "Mundart";
   if ([...SCHLAGER_ARTISTS].some((x) => a.includes(x))) return "Schlager";
-  // Eindeutig sehr ruhige Ballade schlaegt ein breites Genre-Tag (z. B. "rock-and-roll").
+
+  // Genre-Tags zuerst. Frueher lief die "sehr ruhig"-Abkuerzung hier davor – das hat
+  // ruhige Latino-/Reggae-Titel still nach Slow/Love gezogen und damit aus dem Pool
+  // entfernt, weil aus Slow/Love nicht nachgeschoben wird.
+  for (const [mood, keys] of GENRE_RULES) {
+    if (g.some((gen) => keys.some((k) => gen.includes(k)))) return mood;
+  }
+
+  // Erst wenn kein Genre gegriffen hat: eindeutig sehr ruhige Titel als Ballade.
   if (audio && audio.energy != null) {
     const veryCalm = audio.energy < 0.33 ||
       (audio.energy < 0.42 && audio.acousticness != null && audio.acousticness > 0.55);
     if (veryCalm) return "Slow/Love";
   }
-  for (const [mood, keys] of GENRE_RULES) {
-    if (g.some((gen) => keys.some((k) => gen.includes(k)))) return mood;
-  }
-  if (year && year >= 1980 && year <= 1999) return "80er/90er";
   if (audio && audio.energy != null) {
     const e = audio.energy, t = audio.tempo, ac = audio.acousticness, d = audio.danceability;
     const slow = (e < 0.5 && (t == null || t < 108)) ||
@@ -144,28 +176,60 @@ async function reccobeatsFeatures(spotifyId) {
   } catch { return null; }
 }
 
+// Genres pro Interpret, gebuendelt und gecacht. /v1/artists nimmt bis zu 50 IDs pro
+// Aufruf – wichtig, damit das Laden der ganzen Playlist nicht in hunderte Calls zerfaellt.
+const artistGenreCache = new Map(); // artistId -> [genre]
+async function artistGenres(ids) {
+  const want = [...new Set((ids || []).filter(Boolean))];
+  const missing = want.filter((id) => !artistGenreCache.has(id));
+  for (let i = 0; i < missing.length; i += 50) {
+    const chunk = missing.slice(i, i + 50);
+    try {
+      const token = await getAppToken();
+      const r = await fetch("https://api.spotify.com/v1/artists?ids=" + chunk.join(","),
+        { headers: { Authorization: "Bearer " + token } });
+      const d = r.ok ? await r.json() : null;
+      for (const a of d?.artists || []) if (a?.id) artistGenreCache.set(a.id, a.genres || []);
+    } catch { /* Katalog nicht erreichbar -> ohne Genres weiter */ }
+    for (const id of chunk) if (!artistGenreCache.has(id)) artistGenreCache.set(id, []);
+  }
+  return want.flatMap((id) => artistGenreCache.get(id) || []);
+}
+
 const moodCache = new Map(); // trackId -> Richtung
 async function classifyTrack(track) {
   const id = track?.trackId || track?.id;
   if (!id) return "Party-Charts";
+  if (MANUAL_MOOD[id]) return MANUAL_MOOD[id];
   if (moodCache.has(id)) return moodCache.get(id);
-  let genres = [], year = null, artistName = track.artist || "";
-  try {
-    const token = await getAppToken();
-    const auth = { headers: { Authorization: "Bearer " + token } };
-    const tr = await fetch(`https://api.spotify.com/v1/tracks/${id}?market=${MARKET}`, auth).then((r) => r.ok ? r.json() : null);
-    let artistId = null;
-    if (tr) {
-      artistName = (tr.artists || []).map((x) => x.name).join(", ") || artistName;
-      artistId = tr.artists?.[0]?.id || null;
-      const rd = tr.album?.release_date;
-      if (rd) year = parseInt(String(rd).slice(0, 4), 10) || null;
-    }
-    if (artistId) {
-      const ar = await fetch(`https://api.spotify.com/v1/artists/${artistId}`, auth).then((r) => r.ok ? r.json() : null);
-      if (ar?.genres) genres = ar.genres;
-    }
-  } catch { /* Katalog nicht erreichbar -> mit dem klassifizieren, was wir haben */ }
+
+  let year = track.year ?? null;
+  let artistName = track.artist || "";
+  let artistIds = track.artistIds || null;
+
+  // Kommt der Track aus der Playlist, sind Interpreten und Jahr schon dabei –
+  // dann sparen wir uns den /v1/tracks-Aufruf komplett.
+  if (!artistIds?.length || year == null) {
+    try {
+      const token = await getAppToken();
+      const auth = { headers: { Authorization: "Bearer " + token } };
+      const tr = await fetch(`https://api.spotify.com/v1/tracks/${id}?market=${MARKET}`, auth).then((r) => r.ok ? r.json() : null);
+      if (tr) {
+        artistName = (tr.artists || []).map((x) => x.name).join(", ") || artistName;
+        artistIds = (tr.artists || []).map((x) => x.id).filter(Boolean);
+        const rd = tr.album?.release_date;
+        if (rd) year = parseInt(String(rd).slice(0, 4), 10) || null;
+      }
+    } catch { /* Katalog nicht erreichbar -> mit dem klassifizieren, was wir haben */ }
+  }
+
+  // Genres ALLER Interpreten, nicht nur des ersten. Sonst landet "Taki Taki" ueber
+  // DJ Snake in House/EDM und "Baby Boy" ueber Beyonce in HipHop, obwohl die
+  // Feature-Gaeste die Richtung bestimmen. Die Reihenfolge in GENRE_RULES entscheidet
+  // dann, welches der gefundenen Genres gewinnt.
+  let genres = [];
+  try { genres = await artistGenres((artistIds || []).slice(0, 5)); } catch {}
+
   const audio = await reccobeatsFeatures(id); // optional
   const mood = moodFromSignals({ genres, artistName, title: track.title, year, audio });
   moodCache.set(id, mood);
@@ -677,6 +741,30 @@ app.get("/api/spotify-now", djOnly, async (_req, res) => {
 
 app.post("/api/reset", djOnly, (_req, res) => { state = emptyState(); persist(); res.json({ ok: true }); });
 
+// Wie sieht der Pool aus? Zeigt pro Richtung, wie viele Songs aus der Playlist
+// dort gelandet sind – damit sichtbar wird, welche Richtung noch leer ist.
+app.get("/api/pool", (_req, res) => {
+  res.json({
+    playlistId: SPOTIFY_PLAYLIST_ID || null,
+    total: poolMeta.total,
+    dropped: poolMeta.dropped,
+    error: poolMeta.error,
+    loadedAt: poolMeta.ts || null,
+    byMood: Object.fromEntries(MOOD_NAMES.map((m) => [m, {
+      count: (poolByMood[m] || []).length,
+      autoFill: !NO_AUTOFILL.has(m),
+      tracks: (poolByMood[m] || []).map((t) => ({ title: t.title, artist: t.artist, trackId: t.trackId })),
+    }])),
+  });
+});
+
+// Playlist sofort neu einlesen (z. B. nachdem Songs ergaenzt wurden).
+app.post("/api/pool/reload", djOnly, async (_req, res) => {
+  moodCache.clear();
+  await loadPool(true);
+  res.json({ ok: !poolMeta.error, total: poolMeta.total, error: poolMeta.error });
+});
+
 /* ----------------------------- Auto-Fill nach Stimmung ----------------------------- */
 // Loest kuratierte "Titel Interpret"-Eintraege per Spotify-Suche zu echten Tracks auf (gecacht).
 const poolCache = new Map();
@@ -696,6 +784,79 @@ async function resolveTrack(query) {
   return val;
 }
 
+/* ------------------------- Pool aus der Spotify-Playlist ------------------------- */
+// Die Playlist ist die Quelle der Wahrheit fuer den Auto-Fill. Sie wird einmal
+// eingelesen, jeder Track klassifiziert und nach Richtung einsortiert. MOOD_POOL
+// bleibt als Fallback bestehen, falls eine Richtung in der Playlist (noch) leer ist.
+const PLAYLIST_REFRESH_MS = 10 * 60000;
+let poolByMood = {};
+let poolMeta = { ts: 0, total: 0, dropped: 0, error: null, loading: false };
+
+async function fetchPlaylistTracks() {
+  const fields = "next,items(is_local,track(id,uri,name,is_playable,album(release_date,images),artists(id,name)))";
+  let url = `https://api.spotify.com/v1/playlists/${SPOTIFY_PLAYLIST_ID}/tracks?` +
+    new URLSearchParams({ limit: "100", market: MARKET, fields });
+  const out = [];
+  let dropped = 0;
+  while (url) {
+    const token = await getAppToken();
+    const r = await fetch(url, { headers: { Authorization: "Bearer " + token } });
+    if (!r.ok) throw new Error(`playlist ${r.status}: ${(await r.text()).slice(0, 160)}`);
+    const d = await r.json();
+    for (const it of d.items || []) {
+      const t = it?.track;
+      // Lokale Dateien und im Markt nicht verfuegbare Tracks kann Spotify nicht abspielen.
+      if (!t?.id || !t?.uri || it.is_local || t.is_playable === false) { dropped++; continue; }
+      const rd = t.album?.release_date;
+      out.push({
+        uri: t.uri, trackId: t.id, title: t.name,
+        artist: (t.artists || []).map((a) => a.name).join(", "),
+        artistIds: (t.artists || []).map((a) => a.id).filter(Boolean),
+        year: rd ? parseInt(String(rd).slice(0, 4), 10) || null : null,
+        image: t.album?.images?.slice(-1)[0]?.url || null,
+      });
+    }
+    url = d.next;
+  }
+  return { tracks: out, dropped };
+}
+
+async function loadPool(force = false) {
+  if (!SPOTIFY_PLAYLIST_ID) return;
+  if (poolMeta.loading) return;
+  if (!force && Date.now() - poolMeta.ts < PLAYLIST_REFRESH_MS) return;
+  poolMeta.loading = true;
+  try {
+    const { tracks, dropped } = await fetchPlaylistTracks();
+    // Alle Interpreten-Genres in einem Rutsch vorladen, sonst macht die
+    // Klassifizierung unten einen HTTP-Call pro Track.
+    await artistGenres(tracks.flatMap((t) => t.artistIds));
+    const next = Object.fromEntries(MOOD_NAMES.map((m) => [m, []]));
+    for (const t of tracks) {
+      const mood = await classifyTrack(t);
+      (next[mood] ||= []).push(t);
+    }
+    poolByMood = next;
+    poolMeta = { ts: Date.now(), total: tracks.length, dropped, error: null, loading: false };
+    console.log("Pool aus Playlist geladen:",
+      MOOD_NAMES.map((m) => `${m}=${next[m].length}`).join("  "),
+      dropped ? `(${dropped} uebersprungen)` : "");
+  } catch (e) {
+    poolMeta = { ...poolMeta, loading: false, ts: Date.now(), error: e.message };
+    console.error("Pool laden fehlgeschlagen:", e.message);
+  }
+}
+
+// Aus welcher Richtung wird nachgeschoben? Normalerweise die aktuelle. Steht die
+// aber auf Slow/Love, wuerde der Auto-Fill Balladen nachlegen und die Tanzflaeche
+// leerraeumen – dann nehmen wir die naechststaerkste Richtung.
+function autoFillMood() {
+  const mood = currentMood();
+  if (mood && !NO_AUTOFILL.has(mood)) return mood;
+  const alt = computeVibe().rows.find((r) => !NO_AUTOFILL.has(r.mood));
+  return alt?.mood || "Party-Charts";
+}
+
 // Haelt in der aktuellen (festgelegten) Richtung immer >= POOL_FLOOR Pool-Songs bereit.
 // Wichtig fuers 1:2-Mischverhaeltnis: es muessen genug Pool-Songs da sein, damit
 // zwischen den Wuenschen wirklich zwei Pool-Songs laufen koennen. Fuellt in EINEM
@@ -703,7 +864,7 @@ async function resolveTrack(query) {
 // keine feste Reihenfolge. Bereits (auch frueher) verwendete URIs werden uebersprungen.
 async function autoFillMaybe() {
   if (!state.autoFill) return;
-  const mood = currentMood();
+  const mood = autoFillMood();
   if (!mood) return;
   const upcomingPool = state.requests.filter(
     (r) => r.status === "queued" && r.auto && !r.sent && r.id !== state.nowPlaying?.id
@@ -712,12 +873,9 @@ async function autoFillMaybe() {
   if (need <= 0) return;
 
   const usedUris = new Set(state.requests.map((r) => r.uri));
-  const pool = shuffle(MOOD_POOL[mood] || []);
   let added = false;
-  for (const q of pool) {
-    if (need <= 0) break;
-    const t = await resolveTrack(q);
-    if (!t || usedUris.has(t.uri)) continue;
+
+  const add = (t) => {
     usedUris.add(t.uri);
     const maxOrder = state.requests.filter((x) => x.status === "queued").reduce((m, x) => Math.max(m, x.order || 0), 0);
     state.requests.push({
@@ -726,6 +884,21 @@ async function autoFillMaybe() {
       addedBy: "DJ BazooKI", byId: "system", auto: true, ts: Date.now(),
     });
     need--; added = true;
+  };
+
+  // 1. Wahl: Songs aus der Playlist.
+  for (const t of shuffle(poolByMood[mood] || [])) {
+    if (need <= 0) break;
+    if (!t || usedUris.has(t.uri)) continue;
+    add(t);
+  }
+
+  // 2. Wahl: kuratierte Fallback-Liste, solange die Playlist diese Richtung nicht deckt.
+  for (const q of shuffle(MOOD_POOL[mood] || [])) {
+    if (need <= 0) break;
+    const t = await resolveTrack(q);
+    if (!t || usedUris.has(t.uri)) continue;
+    add(t);
   }
   if (added) persist();
 }
@@ -734,6 +907,7 @@ async function autoFillMaybe() {
 // Alle 5s: laufenden Song lesen, nowPlaying abgleichen, ggf. naechsten nachschieben.
 async function tick() {
   try { updateCommittedDirection(); } catch {}
+  try { await loadPool(); } catch {}   // laedt nur, wenn PLAYLIST_REFRESH_MS um ist
   try { await autoFillMaybe(); } catch {}
   if (!dj.access) return;
   let cur;
