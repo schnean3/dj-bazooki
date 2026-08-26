@@ -145,11 +145,19 @@ function myTimes(guestId, now) {
   return state.log.filter((e) => e.byId === guestId && e.ts > cutoff).map((e) => e.ts).sort((a, b) => a - b);
 }
 
-// Queue-Reihenfolge: DJ-Wuensche (pinned) immer zuoberst, dann nach order.
+// Anzahl Likes (Herzen) eines Wunsches.
+function likeCount(r) { return (r.voterIds?.length) || 0; }
+
+// Queue-Reihenfolge:
+//   1. DJ-Wuensche (pinned) immer zuoberst, in ihrer eigenen Reihenfolge.
+//   2. Danach nach Likes absteigend -> das Lied mit den meisten Herzen rutscht nach oben.
+//   3. Bei Gleichstand: wer frueher auf der Liste war (kleinere order) zuerst.
 // Wird ueberall benutzt, wo die Queue sortiert wird (Auto-Advance, Umsortieren, Anzeige).
 function queueSort(a, b) {
   const pa = a.pinned ? 0 : 1, pb = b.pinned ? 0 : 1;
-  return pa - pb || (a.order || 0) - (b.order || 0);
+  if (pa !== pb) return pa - pb;                       // DJ-Pins vor allem anderen
+  if (a.pinned) return (a.order || 0) - (b.order || 0); // Pins untereinander nach Reihenfolge
+  return likeCount(b) - likeCount(a) || (a.order || 0) - (b.order || 0);
 }
 
 // Naechste freie order am Ende der Queue.
