@@ -55,6 +55,117 @@ const MOOD_POOL = {
   "Mundart": ["079 Lo & Leduc", "W. Nuss vo Bümpliz Patent Ochsner", "Ewigi Liäbi Mash", "Bring en hei Baschi", "Fingt di gäng Hecht", "Ke Summer 77 Bombay Street", "Uf u dervo Gölä", "Schwan Bligg"],
 };
 
+/* ===================== Automatisches Richtungs-Mapping ======================
+ * Der Gast waehlt keine Richtung mehr. Wir leiten sie aus dem Song ab:
+ *   1) Spotify-Genres des Haupt-Interpreten  (via /v1/artists)
+ *   2) Erscheinungsjahr                       (via /v1/tracks -> album)
+ *   3) optional Audio-Features                (ReccoBeats, Ersatz fuer Spotifys
+ *      deaktivierte audio-features; rein optional, faellt sauber aus wenn weg)
+ * Alles gecacht pro Track. Wirft nie – im Zweifel "Party-Charts".
+ * Die Listen unten sind bewusst leicht editierbar.
+ * ========================================================================== */
+const norm = (s) => (s || "").toString().toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").trim();
+
+// Interpreten mit eindeutiger Zuordnung (Spotify-Genres sind hier oft leer/ungenau).
+const MUNDART_ARTISTS = new Set([
+  "lo & leduc","lo&leduc","patent ochsner","baschi","gola","bligg","hecht","77 bombay street",
+  "trauffer","dodo","mash","kunz","zuri west","span","plusch","sina","stubete gang","kummerbuben",
+  "stiller has","florian ast","stress","nemo","gotthard","zibbz","dabu fantastic","dabu fantastik",
+  "marc sway","seven","pegasus","troubas kater","damian lynn",
+].map(norm));
+const SCHLAGER_ARTISTS = new Set([
+  "helene fischer","andreas gabalier","dj otzi","udo jurgens","roland kaiser","beatrice egli",
+  "wolfgang petry","andrea berg","semino rossi","mickie krause","vanessa mai","matthias reim",
+  "howard carpendale","die amigos","ross antony","ikke huftgold","mia julia","nino de angelo",
+  "kerstin ott","marianne rosenberg",
+].map(norm));
+
+// Genre-Schluesselwoerter -> Richtung. Erster Treffer in dieser Reihenfolge gewinnt.
+const GENRE_RULES = [
+  ["Mundart",    ["mundart","swiss","schweizer","schwiizer"]],
+  ["Schlager",   ["schlager","volksmusik","volkstumlich","apres","ballermann","discofox","stimmung","austropop"]],
+  ["HipHop/RnB", ["hip hop","hip-hop","hiphop","rap","trap","r&b","rnb","urban contemporary","drill","grime","boom bap"]],
+  ["House/EDM",  ["house","techno","trance","edm","electro","eurodance","big room","future bass","dubstep","drum and bass","hardstyle","hands up","italo dance","tech house","deep house","rave"]],
+  ["Rock",       ["rock","metal","punk","grunge","hardcore","emo","thrash","grindcore"]],
+];
+
+// Reine Zuordnung aus Signalen – ohne Netzwerk, daher gut testbar.
+function moodFromSignals({ genres = [], artistName = "", title = "", year = null, audio = null }) {
+  const g = genres.map(norm);
+  const a = norm(artistName);
+  if ([...MUNDART_ARTISTS].some((x) => a.includes(x))) return "Mundart";
+  if ([...SCHLAGER_ARTISTS].some((x) => a.includes(x))) return "Schlager";
+  // Eindeutig sehr ruhige Ballade schlaegt ein breites Genre-Tag (z. B. "rock-and-roll").
+  if (audio && audio.energy != null) {
+    const veryCalm = audio.energy < 0.33 ||
+      (audio.energy < 0.42 && audio.acousticness != null && audio.acousticness > 0.55);
+    if (veryCalm) return "Slow/Love";
+  }
+  for (const [mood, keys] of GENRE_RULES) {
+    if (g.some((gen) => keys.some((k) => gen.includes(k)))) return mood;
+  }
+  if (year && year >= 1980 && year <= 1999) return "80er/90er";
+  if (audio && audio.energy != null) {
+    const e = audio.energy, t = audio.tempo, ac = audio.acousticness, d = audio.danceability;
+    const slow = (e < 0.5 && (t == null || t < 108)) ||
+                 (ac != null && ac > 0.6 && e < 0.6) ||
+                 (d != null && d < 0.45 && e < 0.55);
+    return slow ? "Slow/Love" : "Party-Charts";
+  }
+  const tg = norm(title);
+  if (g.includes("singer-songwriter") || tg.includes("acoustic") || tg.includes("unplugged")) return "Slow/Love";
+  return "Party-Charts"; // sicherste Tanzflaechen-Wahl
+}
+
+// Optional: Audio-Features von ReccoBeats (gratis, ohne Key, per Spotify-Track-ID).
+// Hartes Timeout; jeder Fehler => null, dann klassifizieren wir ohne Audio.
+async function reccobeatsFeatures(spotifyId) {
+  try {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 1500);
+    const r = await fetch(`https://api.reccobeats.com/v1/track/${spotifyId}/audio-features`, { signal: ctrl.signal });
+    clearTimeout(to);
+    if (!r.ok) return null;
+    const d = await r.json();
+    const f = d && typeof d === "object"
+      ? (d.energy != null ? d : (Array.isArray(d.content) ? d.content[0] : d.audioFeatures || d.data || null))
+      : null;
+    if (!f || f.energy == null) return null;
+    return {
+      energy: f.energy, valence: f.valence, danceability: f.danceability,
+      tempo: f.tempo, acousticness: f.acousticness,
+    };
+  } catch { return null; }
+}
+
+const moodCache = new Map(); // trackId -> Richtung
+async function classifyTrack(track) {
+  const id = track?.trackId || track?.id;
+  if (!id) return "Party-Charts";
+  if (moodCache.has(id)) return moodCache.get(id);
+  let genres = [], year = null, artistName = track.artist || "";
+  try {
+    const token = await getAppToken();
+    const auth = { headers: { Authorization: "Bearer " + token } };
+    const tr = await fetch(`https://api.spotify.com/v1/tracks/${id}?market=${MARKET}`, auth).then((r) => r.ok ? r.json() : null);
+    let artistId = null;
+    if (tr) {
+      artistName = (tr.artists || []).map((x) => x.name).join(", ") || artistName;
+      artistId = tr.artists?.[0]?.id || null;
+      const rd = tr.album?.release_date;
+      if (rd) year = parseInt(String(rd).slice(0, 4), 10) || null;
+    }
+    if (artistId) {
+      const ar = await fetch(`https://api.spotify.com/v1/artists/${artistId}`, auth).then((r) => r.ok ? r.json() : null);
+      if (ar?.genres) genres = ar.genres;
+    }
+  } catch { /* Katalog nicht erreichbar -> mit dem klassifizieren, was wir haben */ }
+  const audio = await reccobeatsFeatures(id); // optional
+  const mood = moodFromSignals({ genres, artistName, title: track.title, year, audio });
+  moodCache.set(id, mood);
+  return mood;
+}
+
 /* ----------------------------- persistente State ----------------------------- */
 const DB_FILE = join(process.env.DATA_DIR || __dirname, "data.json");
 const emptyState = () => ({ requests: [], nowPlaying: null, log: [], autoAdvance: true, autoFill: true, autoApprove: true, directions: [] });
@@ -286,9 +397,9 @@ app.post("/api/autoapprove", djOnly, (req, res) => {
 });
 
 /* ---- Gast: Wunsch abgeben (max 3/Std) ---- */
-app.post("/api/requests", (req, res) => {
+app.post("/api/requests", async (req, res) => {
   const { guestId, name, track, mood } = req.body || {};
-  if (!guestId || !track?.uri || !mood) return res.status(400).json({ error: "unvollstaendig" });
+  if (!guestId || !track?.uri) return res.status(400).json({ error: "unvollstaendig" });
   const now = Date.now();
   if (state.requests.some((r) => r.uri === track.uri && r.status !== "played"))
     return res.status(409).json({ error: "schon auf der Wunschliste" });
@@ -306,6 +417,10 @@ app.post("/api/requests", (req, res) => {
     const nextMin = Math.max(1, Math.ceil((times[0] + HOUR - now) / 60000));
     return res.status(429).json({ error: "limit", nextMin });
   }
+  // Richtung automatisch aus dem Song ableiten – der Gast waehlt nichts mehr.
+  // Ein explizit mitgeschicktes, gueltiges mood bleibt erlaubt (z. B. fuer Tests).
+  const autoMood = !MOOD_NAMES.includes(mood);
+  const finalMood = autoMood ? await classifyTrack(track) : mood;
   const autoApproved = !!state.autoApprove;
   const request = {
     id: uid(),
@@ -314,7 +429,8 @@ app.post("/api/requests", (req, res) => {
     title: track.title,
     artist: track.artist,
     image: track.image || null,
-    mood,
+    mood: finalMood,
+    autoMood,
     status: autoApproved ? "queued" : "pending",
     ...(autoApproved ? { order: nextOrder() } : {}),
     voterIds: [],
