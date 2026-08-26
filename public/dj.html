@@ -61,7 +61,7 @@
       </section>
 
       <section style="margin-top:20px">
-        <div class="section-head">Queue · frei umsortierbar (<span id="q-count">0</span>)</div>
+        <div class="section-head">Queue · nach ♥ sortiert (<span id="q-count">0</span>)</div>
         <div id="queue" style="display:flex;flex-direction:column;gap:8px"></div>
       </section>
 
@@ -70,7 +70,7 @@
   </div>
 
   <script type="module">
-    import { MOODS, api, el, renderVibe, renderNow, toast } from "/shared.js";
+    import { MOODS, api, el, renderVibe, renderNow, toast, queueSort } from "/shared.js";
     const $ = (id) => document.getElementById(id);
 
     $("logout").onclick = async () => { await api("/api/logout", { method: "POST" }); location.reload(); };
@@ -180,7 +180,7 @@
 
       const pending = data.requests.filter((r) => r.status === "pending").sort((a, b) => b.weight - a.weight || a.ts - b.ts);
       const queue = data.requests.filter((r) => r.status === "queued" && r.id !== data.nowPlaying?.id)
-        .sort((a, b) => (a.pinned ? 0 : 1) - (b.pinned ? 0 : 1) || (a.order || 0) - (b.order || 0));
+        .sort(queueSort);
 
       $("p-count").textContent = pending.length;
       const pc = $("pending"); pc.innerHTML = "";

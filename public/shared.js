@@ -11,6 +11,18 @@ export const MOODS = {
   "Mundart":      { color: "#93A17C", emoji: "🇨🇭" },
 };
 
+// Anzahl Likes (Herzen). Muss zur Serverlogik in queueSort passen.
+export function likeCount(r) { return (r.voterIds?.length) || 0; }
+
+// Gleiche Queue-Sortierung wie im Server: DJ-Pins zuoberst, dann meiste Likes,
+// bei Gleichstand die frueheren zuerst. So zeigt die Anzeige genau die Abspiel-Reihenfolge.
+export function queueSort(a, b) {
+  const pa = a.pinned ? 0 : 1, pb = b.pinned ? 0 : 1;
+  if (pa !== pb) return pa - pb;
+  if (a.pinned) return (a.order || 0) - (b.order || 0);
+  return likeCount(b) - likeCount(a) || (a.order || 0) - (b.order || 0);
+}
+
 export function guestId() {
   let id = localStorage.getItem("bazooki_guest");
   if (!id) { id = "g" + Math.random().toString(36).slice(2, 10); localStorage.setItem("bazooki_guest", id); }
