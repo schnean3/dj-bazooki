@@ -111,6 +111,7 @@
         body: JSON.stringify({ guestId: gid, name: guestName(), track: pendingTrack, mood }),
       });
       if (ok) { toast(data.queued ? `„${pendingTrack.title}" ist in der Queue 🎶` : `„${pendingTrack.title}" gewünscht — wartet auf DJ-Freigabe 🎶`); $("q").value = ""; $("results").innerHTML = ""; refresh(); }
+      else if (status === 429 && data.error === "song_cooldown") toast(`Dieses Lied wurde gerade schon gewünscht — wieder möglich in ${data.nextMin} Min.`);
       else if (status === 429) toast(`Limit erreicht. Nächster Wunsch in ${data.nextMin} Min.`);
       else if (status === 409) toast("Schon auf der Wunschliste — gib ihm ein Herz ♥");
       else toast("Hat nicht geklappt: " + (data.error || status));
