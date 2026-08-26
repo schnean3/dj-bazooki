@@ -48,6 +48,13 @@
       <div id="playbar" style="margin-top:10px"></div>
       <div id="device-bar" style="margin-top:10px"></div>
 
+      <section style="margin-top:22px">
+        <div class="section-head">DJ-Wunsch · spielt als Nächstes</div>
+        <p class="muted" style="font-size:13px;margin:-6px 0 10px">Dein eigener Song landet ganz oben in der Queue und wird als Nächstes nachgeschoben.</p>
+        <input id="dj-q" class="input" placeholder="Song oder Künstler suchen…" autocomplete="off" />
+        <div id="dj-results" class="grid"></div>
+      </section>
+
       <section style="margin-top:20px">
         <div class="section-head">Freigabe · offene Wünsche (<span id="p-count">0</span>)</div>
         <div id="pending" style="display:flex;flex-direction:column;gap:8px"></div>
@@ -68,6 +75,31 @@
 
     $("logout").onclick = async () => { await api("/api/logout", { method: "POST" }); location.reload(); };
     $("reset").onclick = async () => { if (confirm("Wirklich alle Wünsche löschen?")) { await api("/api/reset", { method: "POST" }); refresh(); } };
+
+    // --- DJ-Wunsch: Suche (debounced) und direkt oben in die Queue setzen ---
+    let djSearchTimer = null;
+    $("dj-q").addEventListener("input", (e) => {
+      clearTimeout(djSearchTimer);
+      const q = e.target.value.trim();
+      djSearchTimer = setTimeout(() => djSearch(q), 300);
+    });
+    async function djSearch(q) {
+      const box = $("dj-results");
+      if (!q) { box.innerHTML = ""; return; }
+      const { data } = await api("/api/search?q=" + encodeURIComponent(q));
+      box.innerHTML = "";
+      for (const t of data.tracks || []) {
+        box.append(el("button", { class: "card", style: "cursor:pointer;text-align:left", onclick: () => djWish(t) },
+          el("div", { class: "truncate", style: "font-weight:600" }, t.title),
+          el("div", { class: "truncate muted", style: "font-size:12.5px" }, t.artist)));
+      }
+      if (!(data.tracks || []).length) box.append(el("div", { class: "empty" }, "Nichts gefunden. Anders schreiben?"));
+    }
+    async function djWish(track) {
+      const { ok, data } = await api("/api/dj/wish", { method: "POST", body: JSON.stringify({ track }) });
+      if (ok) { toast(`„${track.title}" nach oben gesetzt — läuft als Nächstes 🎧`); $("dj-q").value = ""; $("dj-results").innerHTML = ""; refresh(); }
+      else toast("Hat nicht geklappt: " + (data.error || ""));
+    }
 
     async function act(path, body) {
       const { ok, status, data } = await api(path, { method: "POST", body: body ? JSON.stringify(body) : undefined });
@@ -112,6 +144,11 @@
         onclick: async () => { await api("/api/autofill", { method: "POST", body: JSON.stringify({ on: !onFill }) }); refresh(); } },
         (onFill ? "● " : "○ ") + "Auto-Fill " + (onFill ? "an" : "aus"));
 
+      var onApprove = !!data.autoApprove;
+      const approveToggle = el("button", { class: onApprove ? "btn gold" : "btn ghost", style: "font-size:12px;padding:6px 12px",
+        onclick: async () => { await api("/api/autoapprove", { method: "POST", body: JSON.stringify({ on: !onApprove }) }); refresh(); } },
+        (onApprove ? "● " : "○ ") + "Auto-Freigabe " + (onApprove ? "an" : "aus"));
+
       let info;
       if (pb.duration > 0) {
         const remaining = pb.duration - pb.progress;
@@ -122,7 +159,7 @@
         info = el("span", { class: "muted", style: "font-size:12.5px" }, "Spotify inaktiv — starte einen Song mit ▶");
       }
 
-      bar.append(el("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" }, toggle, fillToggle));
+      bar.append(el("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" }, toggle, fillToggle, approveToggle));
       bar.append(el("div", { style: "margin-top:6px" }, info));
 
       if (pb.duration > 0) {
@@ -142,11 +179,12 @@
       renderPlaybar(data);
 
       const pending = data.requests.filter((r) => r.status === "pending").sort((a, b) => b.weight - a.weight || a.ts - b.ts);
-      const queue = data.requests.filter((r) => r.status === "queued" && r.id !== data.nowPlaying?.id).sort((a, b) => (a.order || 0) - (b.order || 0));
+      const queue = data.requests.filter((r) => r.status === "queued" && r.id !== data.nowPlaying?.id)
+        .sort((a, b) => (a.pinned ? 0 : 1) - (b.pinned ? 0 : 1) || (a.order || 0) - (b.order || 0));
 
       $("p-count").textContent = pending.length;
       const pc = $("pending"); pc.innerHTML = "";
-      if (!pending.length) pc.append(el("div", { class: "empty" }, "Alle Wünsche bearbeitet."));
+      if (!pending.length) pc.append(el("div", { class: "empty" }, data.autoApprove ? "Auto-Freigabe aktiv — Wünsche landen direkt in der Queue." : "Alle Wünsche bearbeitet."));
       for (const r of pending) {
         pc.append(el("div", { class: "row" },
           el("div", { style: "min-width:0;flex:1" },
@@ -165,6 +203,7 @@
           el("button", { class: "btn ghost", style: "padding:1px 5px;font-size:10px", disabled: i === queue.length - 1 ? "" : null, onclick: () => act(`/api/requests/${r.id}/move`, { dir: "down" }) }, "▼"));
         const title = el("div", { style: "display:flex;align-items:center;gap:8px" },
           el("span", { class: "truncate", style: "font-weight:600" }, r.title),
+          r.dj ? el("span", { class: "badge", style: "background:var(--rose)" }, "DJ") : null,
           r.auto ? el("span", { class: "badge", style: `background:${MOODS[r.mood].color}` }, "auto") : null,
           r.sent ? el("span", { class: "badge", style: "background:var(--border);color:var(--dim)" }, "gesendet") : null);
         qc.append(el("div", { class: "row" }, upDown,

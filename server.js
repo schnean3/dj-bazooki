@@ -57,7 +57,7 @@ const MOOD_POOL = {
 
 /* ----------------------------- persistente State ----------------------------- */
 const DB_FILE = join(process.env.DATA_DIR || __dirname, "data.json");
-const emptyState = () => ({ requests: [], nowPlaying: null, log: [], autoAdvance: true, autoFill: true, directions: [] });
+const emptyState = () => ({ requests: [], nowPlaying: null, log: [], autoAdvance: true, autoFill: true, autoApprove: true, directions: [] });
 let state = emptyState();
 try {
   if (existsSync(DB_FILE)) state = { ...emptyState(), ...JSON.parse(readFileSync(DB_FILE, "utf8")) };
@@ -131,7 +131,7 @@ function computeVibe() {
   let total = 0;
   const bump = (mood, w) => { tally[mood] = (tally[mood] || 0) + w; total += w; };
   // Lieder-Wuensche (keine Auto-Fill-Songs): Gewicht = 1 + Herzen
-  for (const r of state.requests) if (r.status !== "played" && !r.auto) bump(r.mood, 1 + (r.voterIds?.length || 0));
+  for (const r of state.requests) if (r.status !== "played" && !r.auto && !r.dj) bump(r.mood, 1 + (r.voterIds?.length || 0));
   // Richtungs-Stimmen: Gewicht 1, nur solange sie aktuell sind
   for (const d of state.directions || []) if (now - d.ts < DIRECTION_WINDOW) bump(d.mood, 1);
   const rows = Object.entries(tally)
@@ -143,6 +143,18 @@ function computeVibe() {
 function myTimes(guestId, now) {
   const cutoff = now - HOUR;
   return state.log.filter((e) => e.byId === guestId && e.ts > cutoff).map((e) => e.ts).sort((a, b) => a - b);
+}
+
+// Queue-Reihenfolge: DJ-Wuensche (pinned) immer zuoberst, dann nach order.
+// Wird ueberall benutzt, wo die Queue sortiert wird (Auto-Advance, Umsortieren, Anzeige).
+function queueSort(a, b) {
+  const pa = a.pinned ? 0 : 1, pb = b.pinned ? 0 : 1;
+  return pa - pb || (a.order || 0) - (b.order || 0);
+}
+
+// Naechste freie order am Ende der Queue.
+function nextOrder() {
+  return state.requests.filter((x) => x.status === "queued").reduce((m, x) => Math.max(m, x.order || 0), 0) + 1;
 }
 
 /* ----------------------------- App ----------------------------- */
@@ -229,6 +241,7 @@ app.get("/api/state", (_req, res) => {
     nowPlaying: state.nowPlaying,
     autoAdvance: state.autoAdvance,
     autoFill: state.autoFill,
+    autoApprove: state.autoApprove,
     playback,
     vibe: computeVibe(),
     directions: state.directions || [],
@@ -258,6 +271,12 @@ app.post("/api/autofill", djOnly, (req, res) => {
   res.json({ ok: true, autoFill: state.autoFill });
 });
 
+app.post("/api/autoapprove", djOnly, (req, res) => {
+  state.autoApprove = !!req.body?.on;
+  persist();
+  res.json({ ok: true, autoApprove: state.autoApprove });
+});
+
 /* ---- Gast: Wunsch abgeben (max 3/Std) ---- */
 app.post("/api/requests", (req, res) => {
   const { guestId, name, track, mood } = req.body || {};
@@ -270,6 +289,7 @@ app.post("/api/requests", (req, res) => {
     const nextMin = Math.max(1, Math.ceil((times[0] + HOUR - now) / 60000));
     return res.status(429).json({ error: "limit", nextMin });
   }
+  const autoApproved = !!state.autoApprove;
   const request = {
     id: uid(),
     uri: track.uri,
@@ -278,7 +298,8 @@ app.post("/api/requests", (req, res) => {
     artist: track.artist,
     image: track.image || null,
     mood,
-    status: "pending",
+    status: autoApproved ? "queued" : "pending",
+    ...(autoApproved ? { order: nextOrder() } : {}),
     voterIds: [],
     addedBy: (name || "Gast").slice(0, 24),
     byId: guestId,
@@ -287,7 +308,7 @@ app.post("/api/requests", (req, res) => {
   state.requests.push(request);
   state.log.push({ byId: guestId, ts: now });
   persist();
-  res.json({ ok: true, remaining: LIMIT - (times.length + 1) });
+  res.json({ ok: true, remaining: LIMIT - (times.length + 1), queued: autoApproved });
 });
 
 app.post("/api/requests/:id/vote", (req, res) => {
@@ -307,6 +328,31 @@ function djOnly(req, res, next) {
   next();
 }
 
+// DJ wuenscht selbst einen Song: landet als "pinned" ganz oben in der Queue und
+// wird als naechstes gespielt. Ist der Song schon auf der Liste, wird er hochgeholt.
+app.post("/api/dj/wish", djOnly, (req, res) => {
+  const { track, mood } = req.body || {};
+  if (!track?.uri) return res.status(400).json({ error: "unvollstaendig" });
+  const m = MOOD_NAMES.includes(mood) ? mood : (computeVibe().dominant || "Party-Charts");
+  const existing = state.requests.find((r) => r.uri === track.uri && r.status !== "played");
+  if (existing) {
+    existing.status = "queued";
+    existing.pinned = true;
+    existing.dj = true;
+    existing.sent = false;
+    existing.order = nextOrder();
+    persist();
+    return res.json({ ok: true, promoted: true });
+  }
+  state.requests.push({
+    id: uid(), uri: track.uri, trackId: track.id, title: track.title, artist: track.artist,
+    image: track.image || null, mood: m, status: "queued", order: nextOrder(), voterIds: [],
+    addedBy: "DJ", byId: "dj", dj: true, pinned: true, ts: Date.now(),
+  });
+  persist();
+  res.json({ ok: true });
+});
+
 app.post("/api/requests/:id/approve", djOnly, (req, res) => {
   const r = state.requests.find((x) => x.id === req.params.id);
   if (!r) return res.status(404).json({ error: "not_found" });
@@ -325,7 +371,7 @@ app.post("/api/requests/:id/reject", djOnly, (req, res) => {
 
 app.post("/api/requests/:id/move", djOnly, (req, res) => {
   const dir = req.body?.dir;
-  const q = state.requests.filter((x) => x.status === "queued").sort((a, b) => (a.order || 0) - (b.order || 0));
+  const q = state.requests.filter((x) => x.status === "queued").sort(queueSort);
   const i = q.findIndex((x) => x.id === req.params.id);
   const j = dir === "up" ? i - 1 : i + 1;
   if (i < 0 || j < 0 || j >= q.length) return res.json({ ok: true });
@@ -505,7 +551,7 @@ async function tick() {
     if (remaining <= AUTO_THRESHOLD_MS && auto.pushedForUri !== uri) {
       const next = state.requests
         .filter((r) => r.status === "queued" && !r.sent)
-        .sort((a, b) => (a.order || 0) - (b.order || 0))[0];
+        .sort(queueSort)[0];
       if (next) {
         try {
           const resp = await djFetch("/me/player/queue?" + new URLSearchParams({ uri: next.uri }), { method: "POST" });
