@@ -482,7 +482,7 @@ function pickNextForQueue() {
     .filter((r) => !r.auto && !r.dj && (!mood || r.mood === mood))
     .sort((a, b) => likeCount(b) - likeCount(a) || (a.order || 0) - (b.order || 0));
   const pools = queued
-    .filter((r) => r.auto)
+    .filter((r) => r.auto && (!mood || r.mood === mood))
     .sort((a, b) => (a.order || 0) - (b.order || 0));
 
   const wantWish = auto.slot % WISH_EVERY === 0; // Slot 0,3,6,... = Wunsch -> 1 Wunsch : 2 Pool
@@ -959,11 +959,23 @@ async function autoFillMaybe() {
   if (!state.autoFill) return;
   const mood = autoFillMood();
   if (!mood) return;
+
+  // Richtungswechsel-Bereinigung: noch nicht gesendete Pool-Songs der ALTEN Richtung
+  // aus der Queue nehmen, sonst haengen sie unspielbar drin (Auswahl ist ja hart auf
+  // die aktuelle Richtung gefiltert). Wuensche und bereits gesendete Songs bleiben.
+  const before = state.requests.length;
+  state.requests = state.requests.filter(
+    (r) => !(r.auto && r.status === "queued" && !r.sent && r.id !== state.nowPlaying?.id && r.mood !== mood)
+  );
+  const cleaned = state.requests.length !== before;
+
+  // Nur Pool-Songs DERSELBEN Richtung zaehlen als vorhanden – sonst wuerde die
+  // Bereinigung ins Leere laufen und die neue Richtung nie aufgefuellt.
   const upcomingPool = state.requests.filter(
-    (r) => r.status === "queued" && r.auto && !r.sent && r.id !== state.nowPlaying?.id
+    (r) => r.status === "queued" && r.auto && r.mood === mood && !r.sent && r.id !== state.nowPlaying?.id
   ).length;
   let need = POOL_FLOOR - upcomingPool;
-  if (need <= 0) return;
+  if (need <= 0) { if (cleaned) persist(); return; }
 
   const usedUris = new Set(state.requests.map((r) => r.uri));
   let added = false;
@@ -993,7 +1005,7 @@ async function autoFillMaybe() {
     if (!t || usedUris.has(t.uri)) continue;
     add(t);
   }
-  if (added) persist();
+  if (added || cleaned) persist();
 }
 
 /* ----------------------------- Horn / Troete ----------------------------- */
