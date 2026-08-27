@@ -417,25 +417,29 @@ function directionSwitchInfo() {
     clearlyAhead: false,
     imminent: false,
     dwellRemainingMs: 0,
+    heldSinceMs: 0,
     etaMs: null,
     curWeight: 0,
     challengerWeight: 0,
   };
-  if (!cur || !cur.mood || !vibe.dominant) return info;
+  if (!cur || !cur.mood) return info;
 
   info.dwellRemainingMs = Math.max(0, (cur.since || 0) + MIN_DWELL_MS - Date.now());
+  info.heldSinceMs = Math.max(0, Date.now() - (cur.since || Date.now()));
   const curRow = vibe.rows.find((r) => r.mood === cur.mood);
   info.curWeight = curRow ? curRow.weight : 0;
-  if (cur.mood === vibe.dominant) return info; // aktuelle Richtung fuehrt selbst -> nichts in Sicht
 
-  const challenger = vibe.rows.find((r) => r.mood !== cur.mood); // staerkste andere Richtung
-  if (!challenger) return info;
-  info.challenger = challenger.mood;
-  info.challengerWeight = challenger.weight;
-  info.clearlyAhead = challenger.weight >= info.curWeight * SWITCH_MARGIN;
-  if (info.clearlyAhead) {
-    info.imminent = true;
-    info.etaMs = info.dwellRemainingMs; // laeuft die Verweilsperre ab, kippt der naechste tick
+  // Staerkste ANDERE Richtung = der Aufholer. Immer ermitteln, auch wenn die
+  // aktuelle Richtung selbst fuehrt (dann ist es einfach der Zweitplatzierte).
+  const challenger = vibe.rows.find((r) => r.mood !== cur.mood);
+  if (challenger && challenger.weight > 0) {
+    info.challenger = challenger.mood;
+    info.challengerWeight = challenger.weight;
+    info.clearlyAhead = challenger.weight >= info.curWeight * SWITCH_MARGIN;
+    if (info.clearlyAhead) {
+      info.imminent = true;
+      info.etaMs = info.dwellRemainingMs; // nur noch die Verweilsperre bremst den Wechsel
+    }
   }
   return info;
 }
