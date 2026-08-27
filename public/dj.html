@@ -43,6 +43,7 @@
     <!-- Konsole -->
     <div id="console" style="display:none">
       <div id="vibe" class="vibe big"></div>
+      <div id="switch"></div>
 
       <div class="row now" id="now" style="margin-top:16px"></div>
       <div id="playbar" style="margin-top:10px"></div>
@@ -70,7 +71,7 @@
   </div>
 
   <script type="module">
-    import { MOODS, api, el, renderVibe, renderNow, toast, queueSort } from "/shared.js";
+    import { MOODS, api, el, renderVibe, renderNow, renderSwitchHint, toast, queueSort } from "/shared.js";
     const $ = (id) => document.getElementById(id);
 
     $("logout").onclick = async () => { await api("/api/logout", { method: "POST" }); location.reload(); };
@@ -175,6 +176,7 @@
 
       const { data } = await api("/api/state");
       renderVibe($("vibe"), data.vibe, true);
+      renderSwitchHint($("switch"), data.directionSwitch, data.vibe, "dj");
       renderNow($("now"), data.nowPlaying);
       renderPlaybar(data);
 

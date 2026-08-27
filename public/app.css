@@ -69,6 +69,15 @@ input::placeholder{ color:var(--dim); opacity:.75; }
 .eq{ display:flex; align-items:flex-end; gap:3px; height:18px; }
 .eq i{ width:4px; height:100%; border-radius:2px; transform-origin:bottom; animation:eq .9s ease-in-out infinite; }
 
+/* ---------- Richtungswechsel-Hinweis ---------- */
+.switch-hint{ display:flex; align-items:center; gap:11px; margin-top:12px; padding:11px 14px; background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--gold); border-radius:12px; box-shadow:0 1px 2px #00000008; }
+.switch-hint .dot{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+.switch-hint.pulse .dot{ animation:pulseDot 1.3s ease-in-out infinite; }
+.switch-hint .st-title{ font-family:var(--display); text-transform:uppercase; letter-spacing:2px; font-size:11px; font-weight:600; color:var(--dim); }
+.switch-hint .st-main{ font-size:14px; font-weight:600; color:var(--ink); margin-top:1px; }
+.switch-hint .st-main .to{ font-family:var(--display); font-size:15px; }
+@keyframes pulseDot{ 0%,100%{ opacity:.35; transform:scale(.85); } 50%{ opacity:1; transform:scale(1.2); } }
+
 .now{ display:flex; align-items:center; gap:14px; }
 .now .art{ width:46px; height:46px; border-radius:12px; flex-shrink:0; display:grid; place-items:center; font-size:22px; background:var(--surface2); }
 

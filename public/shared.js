@@ -93,6 +93,60 @@ export function renderNow(container, np) {
       np ? el("div", { class: "truncate muted", style: "font-size:13px" }, np.artist) : null));
 }
 
+// Grobe Restzeit-Anzeige. Bewusst ohne Sekunden, damit die 3.5s-Pollrate nicht ruckelt
+// und die Zahl nicht mehr Genauigkeit vorgaukelt, als eine Momentaufnahme hergibt.
+export function fmtEta(ms) {
+  if (ms == null) return "";
+  if (ms <= 90000) return "gleich";
+  return "in ~" + Math.round(ms / 60000) + " Min";
+}
+
+// Zeigt einen bevorstehenden Richtungswechsel an. `ds` = data.directionSwitch vom Server.
+// role "dj": zeigt zusaetzlich, wenn eine Richtung gegen die Live-Stimmung gehalten wird.
+// role "guest": nur der eigentliche bevorstehende Wechsel, dezent.
+export function renderSwitchHint(container, ds, vibe, role) {
+  container.innerHTML = "";
+  if (!ds || !ds.current) { container.style.display = "none"; return; }
+
+  const imminent = !!(ds.imminent && ds.challenger && MOODS[ds.challenger]);
+  const held = ds.current, heldM = MOODS[held];
+  const liveDom = vibe?.dominant;
+  const heldOverrides = liveDom && liveDom !== held && MOODS[liveDom];
+
+  // Gast sieht nur echte bevorstehende Wechsel; DJ auch das "wird gehalten".
+  if (!imminent && !(role === "dj" && heldOverrides)) { container.style.display = "none"; return; }
+  container.style.display = "";
+
+  if (imminent) {
+    const ch = MOODS[ds.challenger];
+    const soon = ds.etaMs != null && ds.etaMs <= 90000;
+    const eta = fmtEta(ds.etaMs);
+    const main = role === "dj"
+      ? [ `${heldM.emoji} ${held} `,
+          el("span", { class: "muted" }, "→ "),
+          el("span", { class: "to", style: `color:${ch.color}` }, `${ch.emoji} ${ds.challenger}`),
+          el("span", { class: "muted", style: "font-weight:500" }, ` · ${soon ? "steht an" : eta}`) ]
+      : [ el("span", {}, "Stimmung dreht: "),
+          el("span", { class: "to", style: `color:${ch.color}` }, `${ch.emoji} ${ds.challenger}`),
+          el("span", { class: "muted", style: "font-weight:500" }, ` · ${eta}`) ];
+    container.append(el("div", { class: "switch-hint" + (soon ? " pulse" : ""), style: `border-left-color:${ch.color}` },
+      el("div", { class: "dot", style: `background:${ch.color}` }),
+      el("div", { style: "min-width:0" },
+        el("div", { class: "st-title" }, "Richtungswechsel"),
+        el("div", { class: "st-main" }, main))));
+    return;
+  }
+
+  // DJ-only: aktuelle Richtung wird bewusst gegen eine aufkommende Live-Stimmung gehalten.
+  const dom = MOODS[liveDom];
+  container.append(el("div", { class: "switch-hint", style: `border-left-color:${heldM.color}` },
+    el("div", { class: "dot", style: `background:${heldM.color}` }),
+    el("div", { style: "min-width:0" },
+      el("div", { class: "st-title" }, "Richtung gehalten"),
+      el("div", { class: "st-main" }, `${heldM.emoji} ${held} `,
+        el("span", { class: "muted", style: "font-weight:500" }, `· ${dom.emoji} ${liveDom} holt auf`)))));
+}
+
 export function toast(msg) {
   document.querySelectorAll(".toast").forEach((t) => t.remove());
   const t = el("div", { class: "toast" }, msg);
