@@ -127,6 +127,82 @@
       refresh();
     }
 
+    // --- Voting: "wer bestimmt den naechsten Song" (Pop-up, alle ~20 Min) ---
+    let voteState = { id: null, choiceMade: false, tickTimer: null };
+    const fmtCount = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+
+    function renderVoteModal(v) {
+      const root = $("modal-root");
+      if (!v) { if (voteState.id) { root.innerHTML = ""; clearInterval(voteState.tickTimer); voteState = { id: null, choiceMade: false, tickTimer: null }; } return; }
+
+      // Neue Runde (oder eigener Reload mitten drin) -> Pop-up frisch aufbauen.
+      if (voteState.id !== v.id) {
+        clearInterval(voteState.tickTimer);
+        voteState = { id: v.id, choiceMade: v.voted, tickTimer: null };
+        root.innerHTML = "";
+        const modal = el("div", { class: "modal", id: "vote-modal" });
+        root.append(el("div", { class: "overlay" }, modal));
+      }
+      const modal = $("vote-modal");
+      if (!modal) return;
+
+      if (v.closed) {
+        clearInterval(voteState.tickTimer);
+        modal.innerHTML = "";
+        modal.append(el("div", { style: "text-align:center" },
+          el("div", { class: "muted eyebrow" }, "Voting beendet"),
+          v.winnerName
+            ? el("div", { style: "font-family:var(--script);font-size:40px;color:var(--gold);margin:6px 0" }, v.winnerName)
+            : el("div", { style: "font-family:var(--display);font-size:22px;margin:14px 0;color:var(--dim)" }, "Niemand hat abgestimmt"),
+          v.winnerName
+            ? el("div", { class: "muted", style: "font-size:13.5px" }, "bestimmt den nächsten Song 🎶", el("br"), "Lass dich überraschen.")
+            : null));
+        return;
+      }
+
+      modal.innerHTML = "";
+      const countEl = el("div", { class: "muted eyebrow", style: "font-family:var(--display);font-weight:500;font-variant-numeric:tabular-nums;font-size:44px;line-height:1;color:var(--ink);margin:6px 0 2px;text-align:center" },
+        v.closesAt != null ? fmtCount(v.closesAt - Date.now()) : "…");
+      modal.append(
+        el("div", { style: "text-align:center" },
+          el("div", { class: "muted eyebrow" }, "Voting läuft"),
+          countEl,
+          el("div", { class: "muted", style: "font-size:13px;text-align:center" }, v.closesAt != null ? "bis das Voting schliesst" : "schliesst nach diesem Song")),
+        el("div", { style: "font-family:var(--display);font-size:21px;font-weight:500;margin:16px 0 4px;text-align:center" }, "Wer darf den nächsten Song bestimmen?"),
+        el("div", { class: "muted", style: "font-size:12.5px;margin-bottom:12px;text-align:center" }, "Welches Lied es wird, bleibt eine Überraschung 🤫"));
+
+      const names = el("div", { style: "display:flex;flex-direction:column;gap:8px" });
+      v.names.forEach((n, i) => {
+        const mine = v.myPick === i;
+        names.append(el("button", {
+          class: "chip",
+          style: `padding:13px 14px;font-size:15.5px;text-align:left;width:100%;` + (mine ? `background:var(--gold);color:#3a2f1c;border-color:var(--gold)` : voteState.choiceMade ? `opacity:.45` : ""),
+          disabled: voteState.choiceMade ? "" : null,
+          onclick: voteState.choiceMade ? null : () => castVote(i),
+        }, n + (mine ? "  ✓" : "")));
+      });
+      modal.append(names);
+      if (voteState.choiceMade) modal.append(el("div", { style: "margin-top:14px;color:var(--gold);font-weight:600;font-size:13.5px;text-align:center" }, "✓ Deine Stimme ist gezählt."));
+
+      // Countdown lokal weitertickern, statt auf den naechsten Poll zu warten -> ruckelt nicht.
+      clearInterval(voteState.tickTimer);
+      if (v.closesAt != null) {
+        voteState.tickTimer = setInterval(() => {
+          const el2 = document.querySelector("#vote-modal .eyebrow + div");
+          const rem = v.closesAt - Date.now();
+          if (el2) el2.textContent = fmtCount(rem);
+          if (rem <= 0) clearInterval(voteState.tickTimer);
+        }, 1000);
+      }
+    }
+
+    async function castVote(i) {
+      voteState.choiceMade = true; // optimistisch sofort sperren, kein Doppeltap
+      const { ok } = await api("/api/vote/cast", { method: "POST", body: JSON.stringify({ guestId: gid, choice: i }) });
+      if (!ok) voteState.choiceMade = false;
+      refresh();
+    }
+
     // --- Richtung wählen (eine pro Gast, jederzeit änderbar; ✕ hebt sie auf) ---
     async function setDirection(mood) {
       await api("/api/direction", { method: "POST", body: JSON.stringify({ guestId: gid, mood }) });
@@ -168,7 +244,8 @@
 
     // --- Polling / Render ---
     async function refresh() {
-      const { data } = await api("/api/state");
+      const { data } = await api("/api/state?guestId=" + encodeURIComponent(gid));
+      renderVoteModal(data.vote);
       renderVibe($("vibe"), data.vibe, false);
       renderSwitchHint($("switch"), data.directionSwitch, data.vibe, "guest");
       renderNow($("now"), data.nowPlaying);
