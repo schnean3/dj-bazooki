@@ -150,6 +150,13 @@
         onclick: async () => { await api("/api/autoapprove", { method: "POST", body: JSON.stringify({ on: !onApprove }) }); refresh(); } },
         (onApprove ? "● " : "○ ") + "Auto-Freigabe " + (onApprove ? "an" : "aus"));
 
+      var onHorn = !!data.hornEnabled;
+      const hornToggle = el("button", { class: onHorn ? "btn gold" : "btn ghost", style: "font-size:12px;padding:6px 12px",
+        onclick: async () => { await api("/api/horn", { method: "POST", body: JSON.stringify({ on: !onHorn }) }); refresh(); } },
+        (onHorn ? "● " : "○ ") + "Horn " + (onHorn ? "an" : "aus") + (onHorn && data.hornInMs != null ? " (" + mmss(data.hornInMs) + ")" : ""));
+      const hornTest = el("button", { class: "btn ghost", style: "font-size:12px;padding:6px 12px",
+        onclick: async () => { await api("/api/horn/test", { method: "POST" }); } }, "Horn testen");
+
       let info;
       if (pb.duration > 0) {
         const remaining = pb.duration - pb.progress;
@@ -160,7 +167,7 @@
         info = el("span", { class: "muted", style: "font-size:12.5px" }, "Spotify inaktiv — starte einen Song mit ▶");
       }
 
-      bar.append(el("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" }, toggle, fillToggle, approveToggle));
+      bar.append(el("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" }, toggle, fillToggle, approveToggle, hornToggle, hornTest));
       bar.append(el("div", { style: "margin-top:6px" }, info));
 
       if (pb.duration > 0) {
