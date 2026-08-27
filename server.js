@@ -61,7 +61,7 @@ const POOL_FLOOR = 3;            // so viele kommende Pool-Songs immer bereithal
 const WISH_EVERY = 3;            // 1 Gastwunsch je WISH_EVERY Songs -> Verhaeltnis Wunsch:Pool = 1:2
 // true  = Auto-Advance schickt IMMER die oberste Zeile der Queue (genau das, was der DJ sieht).
 // false = 1:2 Wunsch:Pool-Mischung wie bisher (Pool-Songs werden bewusst dazwischen gestreut).
-const STRICT_QUEUE_ORDER = false;
+const STRICT_QUEUE_ORDER = true;
 
 // --- Gaeste-Voting ("wer bestimmt den naechsten Song") ---
 const VOTE_INTERVAL_MS = Math.max(1, Number(VOTE_INTERVAL_MIN) || 20) * 60000;
