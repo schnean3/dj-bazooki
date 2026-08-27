@@ -29,7 +29,7 @@ const {
   SPOTIFY_PLAYLIST_ID = "7n18x8ELn4t0tKS1cbiksl",
   // Horn/Tröte: URI des Effekts (Episode ODER Track) + Intervall in Minuten.
   HORN_URI = "spotify:episode:7i8ANZDp3UtjiGPJoKXP5f",
-  HORN_INTERVAL_MIN = 15,
+  HORN_INTERVAL_MIN = 20,
   // Gäste-Voting: alle VOTE_INTERVAL_MIN Minuten eine Runde "wer bestimmt den naechsten Song".
   VOTE_INTERVAL_MIN = 20,
 } = process.env;
@@ -55,7 +55,7 @@ const DIRECTION_WINDOW = 120 * 60000; // Richtungs-Stimmen zaehlen 2h, damit die
 const MIN_QUEUE = 2;                   // (Legacy) frueher: Nachschieb-Schwelle; jetzt via POOL_FLOOR
 
 // --- Autonomer DJ: Richtung stabil halten & Wunsch/Pool mischen ---
-const MIN_DWELL_MS = 15 * 60000; // Richtung wird mind. 15 Min gehalten, bevor sie wechseln darf
+const MIN_DWELL_MS = 20 * 60000; // Richtung wird mind. 20 Min gehalten, bevor sie wechseln darf
 const SWITCH_MARGIN = 1.5;       // Neue Richtung muss 1.5x staerker sein als die aktuelle, sonst kein Wechsel
 const POOL_FLOOR = 3;            // so viele kommende Pool-Songs immer bereithalten
 const WISH_EVERY = 3;            // 1 Gastwunsch je WISH_EVERY Songs -> Verhaeltnis Wunsch:Pool = 1:2
@@ -425,7 +425,7 @@ let playback = { is_playing: false, uri: null, title: null, artist: null, progre
 
 // Horn: wird alle HORN_INTERVAL_MS in die Spotify-Queue gehaengt und laeuft
 // dann am naechsten Song-Uebergang. Kein Unterbrechen des laufenden Songs.
-const HORN_INTERVAL_MS = Math.max(1, Number(HORN_INTERVAL_MIN) || 15) * 60000;
+const HORN_INTERVAL_MS = Math.max(1, Number(HORN_INTERVAL_MIN) || 20) * 60000;
 let horn = { lastTs: 0 };
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -516,7 +516,7 @@ function nextOrder() {
 
 /* --------------------- Autonome Richtungs-Steuerung --------------------- */
 // Legt die aktuelle Richtung fest und wechselt sie nur traege:
-// - erst nach MIN_DWELL_MS (15 Min) in der aktuellen Richtung
+// - erst nach MIN_DWELL_MS (20 Min) in der aktuellen Richtung
 // - und nur, wenn die neue Richtung klar (SWITCH_MARGIN = 1.5x) vorne liegt.
 // So dreht die Musik nicht nach jedem einzelnen Wunsch, sondern bleibt bei einer Stimmung.
 function updateCommittedDirection() {
