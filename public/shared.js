@@ -101,35 +101,38 @@ export function fmtEta(ms) {
   return "in ~" + Math.round(ms / 60000) + " Min";
 }
 
+// Genaue Restzeit als M:SS (fuer den Dwell-Countdown).
+export function fmtClock(ms) {
+  const s = Math.max(0, Math.round((ms || 0) / 1000));
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+
 // Zeigt einen bevorstehenden Richtungswechsel an. `ds` = data.directionSwitch vom Server.
 // role "dj": zeigt zusaetzlich, wenn eine Richtung gegen die Live-Stimmung gehalten wird.
 // role "guest": nur der eigentliche bevorstehende Wechsel, dezent.
 export function renderSwitchHint(container, ds, vibe, role) {
   container.innerHTML = "";
-  if (!ds || !ds.current) { container.style.display = "none"; return; }
-
-  const imminent = !!(ds.imminent && ds.challenger && MOODS[ds.challenger]);
-  const held = ds.current, heldM = MOODS[held];
-  const liveDom = vibe?.dominant;
-  const heldOverrides = liveDom && liveDom !== held && MOODS[liveDom];
-
-  // Gast sieht nur echte bevorstehende Wechsel; DJ auch das "wird gehalten".
-  if (!imminent && !(role === "dj" && heldOverrides)) { container.style.display = "none"; return; }
+  // Sichtbar, sobald eine Richtung festgelegt ist - auch ohne klaren Fuehrer.
+  if (!ds || !ds.current || !MOODS[ds.current]) { container.style.display = "none"; return; }
   container.style.display = "";
 
+  const held = ds.current, heldM = MOODS[held];
+  const ch = ds.challenger && MOODS[ds.challenger] ? MOODS[ds.challenger] : null;
+  const imminent = !!(ds.imminent && ch);
+
+  // Fall 1: Wechsel steht an - Aufholer liegt klar (1.5x) vorne, nur die Haltesperre bremst noch.
   if (imminent) {
-    const ch = MOODS[ds.challenger];
     const soon = ds.etaMs != null && ds.etaMs <= 90000;
-    const eta = fmtEta(ds.etaMs);
+    const eta = fmtClock(ds.etaMs);
     const main = role === "dj"
       ? [ `${heldM.emoji} ${held} `,
           el("span", { class: "muted" }, "→ "),
           el("span", { class: "to", style: `color:${ch.color}` }, `${ch.emoji} ${ds.challenger}`),
-          el("span", { class: "muted", style: "font-weight:500" }, ` · ${soon ? "steht an" : eta}`) ]
+          el("span", { class: "muted", style: "font-weight:500" }, ` · ${soon ? "steht an" : "in " + eta}`) ]
       : [ el("span", {}, "Stimmung dreht: "),
           el("span", { class: "to", style: `color:${ch.color}` }, `${ch.emoji} ${ds.challenger}`),
-          el("span", { class: "muted", style: "font-weight:500" }, ` · ${eta}`) ];
-    container.append(el("div", { class: "switch-hint" + (soon ? " pulse" : ""), style: `border-left-color:${ch.color}` },
+          el("span", { class: "muted", style: "font-weight:500" }, ` · ${soon ? "gleich" : "in " + eta}`) ];
+    container.append(el("div", { class: "switch-hint pulse", style: `border-left-color:${ch.color}` },
       el("div", { class: "dot", style: `background:${ch.color}` }),
       el("div", { style: "min-width:0" },
         el("div", { class: "st-title" }, "Richtungswechsel"),
@@ -137,14 +140,28 @@ export function renderSwitchHint(container, ds, vibe, role) {
     return;
   }
 
-  // DJ-only: aktuelle Richtung wird bewusst gegen eine aufkommende Live-Stimmung gehalten.
-  const dom = MOODS[liveDom];
+  // Fall 2: Ruhezustand - aktuelle Richtung, Restzeit der Haltesperre und wer aufholt.
+  const dwell = ds.dwellRemainingMs > 0
+    ? "Wechsel frühestens in " + fmtClock(ds.dwellRemainingMs)
+    : "Wechsel jederzeit möglich";
+  const main = [
+    el("span", { class: "to", style: `color:${heldM.color}` }, `${heldM.emoji} ${held}`),
+    el("span", { class: "muted", style: "font-weight:500" }, ` · ${dwell}`),
+  ];
+  if (role === "dj" && ds.heldSinceMs != null) {
+    main.push(el("span", { class: "muted", style: "font-weight:500" }, ` · seit ${Math.max(1, Math.round(ds.heldSinceMs / 60000))} Min`));
+  }
+  if (ch) {
+    main.push(
+      el("span", { class: "muted", style: "font-weight:500" }, " · "),
+      el("span", { class: "to", style: `color:${ch.color}` }, `${ch.emoji} ${ds.challenger}`),
+      el("span", { class: "muted", style: "font-weight:500" }, " holt auf"));
+  }
   container.append(el("div", { class: "switch-hint", style: `border-left-color:${heldM.color}` },
     el("div", { class: "dot", style: `background:${heldM.color}` }),
     el("div", { style: "min-width:0" },
-      el("div", { class: "st-title" }, "Richtung gehalten"),
-      el("div", { class: "st-main" }, `${heldM.emoji} ${held} `,
-        el("span", { class: "muted", style: "font-weight:500" }, `· ${dom.emoji} ${liveDom} holt auf`)))));
+      el("div", { class: "st-title" }, "Aktuelle Richtung"),
+      el("div", { class: "st-main" }, main))));
 }
 
 export function toast(msg) {
