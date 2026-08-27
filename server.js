@@ -40,7 +40,7 @@ const SCOPES = [
 ].join(" ");
 
 const HOUR = 3600000;
-const LIMIT = 3; // Wuensche pro Gast und Stunde
+const LIMIT = 10; // Wuensche pro Gast und Stunde
 const MOOD_NAMES = ["Party-Charts", "Latino", "Dancehall/Reggae", "Schlager", "Rock", "HipHop/RnB", "House/EDM", "Slow/Love", "Mundart"];
 
 // Richtungen, aus denen NICHT automatisch nachgeschoben wird. Slow/Love bleibt als
