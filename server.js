@@ -131,6 +131,52 @@ const ARTIST_MOOD = new Map([
   ["coolio","HipHop/RnB"],["house of pain","HipHop/RnB"],["ice cube","HipHop/RnB"],
   ["kanye","HipHop/RnB"],["doja cat","HipHop/RnB"],["lil nas x","HipHop/RnB"],
   ["flo rida","HipHop/RnB"],["samy deluxe","HipHop/RnB"],
+  // --- HipHop/RnB: Deutschrap (DE/AT + Hochdeutsch rappende CH-Acts) ---
+  // Grund fuer diesen Block: Spotify liefert fuer viele Deutschrapper ein leeres
+  // genres-Array -> keine GENRE_RULE greift -> sie fielen als "nicht ruhig" in
+  // Party-Charts. Alle hier -> HipHop/RnB.
+  // ACHTUNG Mundart: Schweizer Mundart-Rapper (Bligg, Stress, Greis, Baze, EKR,
+  // Nativ, Mimiks, Pronto, Breitbild ...) gehoeren NICHT hierher, sondern nach
+  // Mundart. Die laufen ueber MUNDART_ARTISTS (steht weiter oben, greift zuerst).
+  // Nur Acts, die Hochdeutsch rappen (Loredana, RAF Camora), stehen hier.
+  //   Aggro/Berlin & Ruhrpott (2005+)
+  ["sido","HipHop/RnB"],["bushido","HipHop/RnB"],["fler","HipHop/RnB"],
+  ["b-tight","HipHop/RnB"],["kool savas","HipHop/RnB"],["azad","HipHop/RnB"],
+  ["eko fresh","HipHop/RnB"],["kollegah","HipHop/RnB"],["farid bang","HipHop/RnB"],
+  ["genetikk","HipHop/RnB"],["257ers","HipHop/RnB"],["xatar","HipHop/RnB"],
+  ["haftbefehl","HipHop/RnB"],["kurdo","HipHop/RnB"],
+  //   Conscious / Rap-Rock / 2010er
+  ["casper","HipHop/RnB"],["marteria","HipHop/RnB"],["marsimoto","HipHop/RnB"],
+  ["k.i.z","HipHop/RnB"],["prinz pi","HipHop/RnB"],["alligatoah","HipHop/RnB"],
+  ["megaloh","HipHop/RnB"],["afrob","HipHop/RnB"],["max herre","HipHop/RnB"],
+  ["jan delay","HipHop/RnB"],["trettmann","HipHop/RnB"],["kontra k","HipHop/RnB"],
+  ["antilopen gang","HipHop/RnB"],["zugezogen maskulin","HipHop/RnB"],["og keemo","HipHop/RnB"],
+  //   Trap / 187 / KMN (2015+)
+  ["187 strassenbande","HipHop/RnB"],["bonez mc","HipHop/RnB"],["gzuz","HipHop/RnB"],
+  ["sa4","HipHop/RnB"],["raf camora","HipHop/RnB"],["rafcamora","HipHop/RnB"],
+  ["capital bra","HipHop/RnB"],["samra","HipHop/RnB"],["ufo361","HipHop/RnB"],
+  ["azet","HipHop/RnB"],["zuna","HipHop/RnB"],["miami yacine","HipHop/RnB"],
+  ["kmn gang","HipHop/RnB"],["summer cem","HipHop/RnB"],["kc rebell","HipHop/RnB"],
+  ["ak ausserkontrolle","HipHop/RnB"],["ak ausser kontrolle","HipHop/RnB"],
+  ["veysel","HipHop/RnB"],["majoe","HipHop/RnB"],["olexesh","HipHop/RnB"],
+  ["dardan","HipHop/RnB"],["celo & abdi","HipHop/RnB"],["18 karat","HipHop/RnB"],
+  ["bausa","HipHop/RnB"],["shindy","HipHop/RnB"],["loredana","HipHop/RnB"],
+  //   Neue Generation (2020+)
+  ["apache 207","HipHop/RnB"],["pashanim","HipHop/RnB"],["ski aggu","HipHop/RnB"],
+  ["makko","HipHop/RnB"],["badmomzjay","HipHop/RnB"],["reezy","HipHop/RnB"],
+  ["t-low","HipHop/RnB"],["01099","HipHop/RnB"],["ayliva","HipHop/RnB"],
+  ["shirin david","HipHop/RnB"],["jazeek","HipHop/RnB"],["lacazette","HipHop/RnB"],
+  ["juju","HipHop/RnB"],["nura","HipHop/RnB"],["haiyti","HipHop/RnB"],
+  ["sxtn","HipHop/RnB"],["yung hurn","HipHop/RnB"],
+  // Bewusst NICHT als Teilstring eingetragen (Kollisionsgefahr, wuerde Fremd-Acts
+  // faelschlich nach HipHop ziehen). Bei Bedarf pro Track ueber MANUAL_MOOD pinnen:
+  //   "cro"    -> "Croatia Squad" (House), "macro", ...
+  //   "rin"    -> "Marina", "Rihanna", "bring me ..."
+  //   "mero"   -> "Cameron", "Romero"
+  //   "nimo"   -> "Geronimo"
+  //   "massiv" -> "Massive Attack"
+  //   "luciano"-> Techno-Luciano (House), Pavarotti
+  //   "eno" / "hava" / "kalim" / "ssio" / "silla" -> zu kurz/mehrdeutig
   // --- Latino ---
   ["bad bunny","Latino"],["daddy yankee","Latino"],["j balvin","Latino"],
   ["luis fonsi","Latino"],["don omar","Latino"],["maluma","Latino"],["karol g","Latino"],
@@ -138,6 +184,11 @@ const ARTIST_MOOD = new Map([
   ["anitta","Latino"],["ricky martin","Latino"],["enrique iglesias","Latino"],
   ["marc anthony","Latino"],["gente de zona","Latino"],["manu chao","Latino"],
   ["becky g","Latino"],["farruko","Latino"],["wisin","Latino"],["yandel","Latino"],
+  ["ozuna","Latino"],["feid","Latino"],["peso pluma","Latino"],["quevedo","Latino"],
+  ["sech","Latino"],["manuel turizo","Latino"],["camilo","Latino"],["sebastian yatra","Latino"],
+  ["natti natasha","Latino"],["tainy","Latino"],["rels b","Latino"],["chayanne","Latino"],
+  ["shakira","Latino"],["grupo frontera","Latino"],["fuerza regida","Latino"],
+  ["eslabon armado","Latino"],["jhayco","Latino"],
   // --- House/EDM ---
   ["david guetta","House/EDM"],["calvin harris","House/EDM"],["avicii","House/EDM"],
   ["swedish house mafia","House/EDM"],["martin garrix","House/EDM"],["tiesto","House/EDM"],
@@ -146,6 +197,14 @@ const ARTIST_MOOD = new Map([
   ["skrillex","House/EDM"],["robin schulz","House/EDM"],["felix jaehn","House/EDM"],
   ["alan walker","House/EDM"],["don diablo","House/EDM"],["dj antoine","House/EDM"],
   ["mr. da-nos","House/EDM"],["camelphat","House/EDM"],["dj tatana","House/EDM"],["parov stelar","House/EDM"],
+  ["meduza","House/EDM"],["acraze","House/EDM"],["purple disco machine","House/EDM"],
+  ["james hype","House/EDM"],["john summit","House/EDM"],["dom dolla","House/EDM"],
+  ["hugel","House/EDM"],["vize","House/EDM"],["lost frequencies","House/EDM"],
+  ["regard","House/EDM"],["joel corry","House/EDM"],["oliver heldens","House/EDM"],
+  ["kungs","House/EDM"],["r3hab","House/EDM"],["afrojack","House/EDM"],["steve aoki","House/EDM"],
+  ["nicky romero","House/EDM"],["hardwell","House/EDM"],["scooter","House/EDM"],
+  ["gestort aber geil","House/EDM"],["bodybangers","House/EDM"],["sofi tukker","House/EDM"],
+  ["bob sinclar","House/EDM"],["fedde le grand","House/EDM"],
   // --- Rock ---
   ["ac/dc","Rock"],["guns n roses","Rock"],["bon jovi","Rock"],["nirvana","Rock"],
   ["foo fighters","Rock"],["red hot chili peppers","Rock"],["linkin park","Rock"],
@@ -154,12 +213,19 @@ const ARTIST_MOOD = new Map([
   ["die toten hosen","Rock"],["die arzte","Rock"],["the killers","Rock"],
   ["rage against the machine","Rock"],["system of a down","Rock"],["blink-182","Rock"],
   ["sum 41","Rock"],["the offspring","Rock"],
+  ["bohse onkelz","Rock"],["kraftklub","Rock"],["broilers","Rock"],
+  ["arctic monkeys","Rock"],["kings of leon","Rock"],["queens of the stone age","Rock"],
+  ["oasis","Rock"],["pearl jam","Rock"],
   // --- Dancehall/Reggae ---
   ["bob marley","Dancehall/Reggae"],["sean paul","Dancehall/Reggae"],["shaggy","Dancehall/Reggae"],
   ["damian marley","Dancehall/Reggae"],["gentleman","Dancehall/Reggae"],["patrice","Dancehall/Reggae"],
   ["inner circle","Dancehall/Reggae"],["beenie man","Dancehall/Reggae"],["konshens","Dancehall/Reggae"],
   ["popcaan","Dancehall/Reggae"],["seeed","Dancehall/Reggae"],["chronixx","Dancehall/Reggae"],
   ["million stylez","Dancehall/Reggae"],
+  ["koffee","Dancehall/Reggae"],["vybz kartel","Dancehall/Reggae"],["capleton","Dancehall/Reggae"],
+  ["sizzla","Dancehall/Reggae"],["buju banton","Dancehall/Reggae"],["elephant man","Dancehall/Reggae"],
+  ["collie buddz","Dancehall/Reggae"],["protoje","Dancehall/Reggae"],["alborosie","Dancehall/Reggae"],
+  ["jimmy cliff","Dancehall/Reggae"],["ziggy marley","Dancehall/Reggae"],["shabba ranks","Dancehall/Reggae"],
 ].map(([n, m]) => [norm(n), m]));
 
 // Genre-Schluesselwoerter -> Richtung. Erster Treffer in dieser Reihenfolge gewinnt.
