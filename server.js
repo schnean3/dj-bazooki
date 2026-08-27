@@ -472,15 +472,23 @@ function pickNextForQueue() {
     return top ? { track: top, counts: false } : null;
   }
 
+  // Nur Wuensche der AKTUELL laufenden Richtung sind abspielbar. Wuensche anderer
+  // Richtungen bleiben in der Queue liegen ("Warteliste"), sammeln weiter Herzen und
+  // bestimmen ueber computeVibe() die naechste Richtung mit. Kommt ihre Richtung dran,
+  // stehen sie bereits nach Herzen sortiert startklar. mood = die Richtung, die gerade
+  // auch den Pool fuellt (autoFillMood), damit Wunsch und Pool dieselbe Spur fahren.
+  const mood = autoFillMood();
   const wishes = queued
-    .filter((r) => !r.auto && !r.dj)
+    .filter((r) => !r.auto && !r.dj && (!mood || r.mood === mood))
     .sort((a, b) => likeCount(b) - likeCount(a) || (a.order || 0) - (b.order || 0));
   const pools = queued
     .filter((r) => r.auto)
     .sort((a, b) => (a.order || 0) - (b.order || 0));
 
   const wantWish = auto.slot % WISH_EVERY === 0; // Slot 0,3,6,... = Wunsch -> 1 Wunsch : 2 Pool
+  // Kein passender Wunsch da? Dann Pool-Song (auch Richtung), NICHT ein fremder Wunsch.
   let track = wantWish ? wishes[0] || pools[0] : pools[0] || wishes[0];
+  // Allerletzte Reissleine gegen Stille: irgendwas aus der Queue (auch fremde Richtung).
   if (!track) track = queued.slice().sort(queueSort)[0];
   return { track, counts: true };
 }
