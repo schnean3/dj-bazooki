@@ -138,7 +138,8 @@
           el("div", { style: "min-width:0;flex:1" },
             el("div", { style: "display:flex;align-items:center;gap:8px" },
               el("span", { class: "truncate", style: "font-weight:600" }, r.title), badge),
-            el("div", { class: "truncate muted", style: "font-size:12.5px" }, `${r.artist} · ${MOODS[r.mood].emoji} ${r.mood} · von ${mine ? "dir" : r.addedBy}`)),
+            el("div", { class: "truncate muted", style: "font-size:12.5px" }, `${r.artist} · ${MOODS[r.mood].emoji} ${r.mood}`),
+            el("div", { class: "truncate", style: "font-size:12px;color:var(--gold);margin-top:2px" }, `von ${mine ? "dir" : r.addedBy}`)),
           el("button", { class: "pill", style: voted ? `color:${MOODS[r.mood].color};border-color:${MOODS[r.mood].color}66` : "", disabled: voted ? "" : null, onclick: voted ? null : () => vote(r.id) }, `♥ ${r.weight}`)));
       }
     }
