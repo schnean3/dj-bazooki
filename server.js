@@ -27,6 +27,9 @@ const {
   // Playlist, aus der der Auto-Fill-Pool gebaut wird. Muss oeffentlich lesbar sein,
   // dann reicht der App-Token. Leer lassen => Fallback auf MOOD_POOL weiter unten.
   SPOTIFY_PLAYLIST_ID = "7n18x8ELn4t0tKS1cbiksl",
+  // Horn/Tröte: URI des Effekts (Episode ODER Track) + Intervall in Minuten.
+  HORN_URI = "spotify:episode:7i8ANZDp3UtjiGPJoKXP5f",
+  HORN_INTERVAL_MIN = 15,
 } = process.env;
 
 if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
@@ -248,7 +251,7 @@ async function classifyTrack(track) {
 
 /* ----------------------------- persistente State ----------------------------- */
 const DB_FILE = join(process.env.DATA_DIR || __dirname, "data.json");
-const emptyState = () => ({ requests: [], nowPlaying: null, log: [], autoAdvance: true, autoFill: true, autoApprove: true, directions: [], committedDirection: null });
+const emptyState = () => ({ requests: [], nowPlaying: null, log: [], autoAdvance: true, autoFill: true, autoApprove: true, hornEnabled: false, directions: [], committedDirection: null });
 let state = emptyState();
 try {
   if (existsSync(DB_FILE)) state = { ...emptyState(), ...JSON.parse(readFileSync(DB_FILE, "utf8")) };
@@ -269,6 +272,11 @@ let appToken = { value: null, expires: 0 }; // Client-Credentials fuer Gaeste-Su
 const AUTO_THRESHOLD_MS = 30000; // so viel vor Songende wird nachgeschoben
 let auto = { pushedForUri: null, slot: 0 };
 let playback = { is_playing: false, uri: null, title: null, artist: null, progress: 0, duration: 0, ts: 0 };
+
+// Horn: wird alle HORN_INTERVAL_MS in die Spotify-Queue gehaengt und laeuft
+// dann am naechsten Song-Uebergang. Kein Unterbrechen des laufenden Songs.
+const HORN_INTERVAL_MS = Math.max(1, Number(HORN_INTERVAL_MIN) || 15) * 60000;
+let horn = { lastTs: 0 };
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 const basicAuth = "Basic " + Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString("base64");
@@ -558,6 +566,8 @@ app.get("/api/state", (_req, res) => {
     autoAdvance: state.autoAdvance,
     autoFill: state.autoFill,
     autoApprove: state.autoApprove,
+    hornEnabled: !!state.hornEnabled,
+    hornInMs: state.hornEnabled ? Math.max(0, HORN_INTERVAL_MS - (Date.now() - horn.lastTs)) : null,
     playback,
     vibe: computeVibe(),
     committedDirection: state.committedDirection || null,
@@ -593,6 +603,20 @@ app.post("/api/autoapprove", djOnly, (req, res) => {
   state.autoApprove = !!req.body?.on;
   persist();
   res.json({ ok: true, autoApprove: state.autoApprove });
+});
+
+// Horn an/aus. Beim Einschalten den Timer neu starten -> erstes Horn erst in HORN_INTERVAL.
+app.post("/api/horn", djOnly, (req, res) => {
+  state.hornEnabled = !!req.body?.on;
+  if (state.hornEnabled) horn.lastTs = Date.now();
+  persist();
+  res.json({ ok: true, hornEnabled: state.hornEnabled });
+});
+
+// Soundcheck: Horn sofort in die Queue haengen (laeuft nach dem aktuellen Song).
+app.post("/api/horn/test", djOnly, async (_req, res) => {
+  const ok = await queueHorn();
+  res.status(ok ? 200 : 409).json({ ok, error: ok ? undefined : "no_device_or_uri" });
 });
 
 /* ---- Gast: Wunsch abgeben (max 3/Std) ---- */
@@ -960,6 +984,19 @@ async function autoFillMaybe() {
   if (added) persist();
 }
 
+/* ----------------------------- Horn / Troete ----------------------------- */
+// Haengt den Horn-Effekt hinten an Spotifys Up-Next. Er laeuft dann nach dem
+// aktuellen Song, ohne ihn zu unterbrechen. Gibt true zurueck bei Erfolg.
+async function queueHorn() {
+  if (!dj.access) return false;
+  try {
+    const resp = await djFetch("/me/player/queue?" + new URLSearchParams({ uri: HORN_URI }), { method: "POST" });
+    if (resp.ok) return true;               // 200/204 -> eingereiht
+    await resp.text().catch(() => {});      // z.B. kein aktives Geraet -> Body schliessen, spaeter erneut
+  } catch {}
+  return false;
+}
+
 /* ----------------------------- Auto-Advance-Loop ----------------------------- */
 // Alle 5s: laufenden Song lesen, nowPlaying abgleichen, ggf. naechsten nachschieben.
 async function tick() {
@@ -997,6 +1034,12 @@ async function tick() {
       auto.pushedForUri = null; // neuer Song laeuft -> Guard zuruecksetzen
       persist();
     }
+  }
+
+  // Horn: alle HORN_INTERVAL_MS einmal in die Queue haengen (nur waehrend Musik laeuft).
+  // Laeuft am naechsten Song-Uebergang, unterbricht nichts.
+  if (state.hornEnabled && playback.is_playing && Date.now() - horn.lastTs >= HORN_INTERVAL_MS) {
+    if (await queueHorn()) horn.lastTs = Date.now();
   }
 
   // Nachschieben, wenn der aktuelle Song fast fertig ist.
