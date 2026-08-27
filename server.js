@@ -392,6 +392,46 @@ function currentMood() {
   return state.committedDirection?.mood || computeVibe().dominant || null;
 }
 
+// Beschreibt, ob (und wann) ein Richtungswechsel bevorsteht — dieselbe Regel wie
+// updateCommittedDirection(): ein Herausforderer wechselt nur, wenn er >= SWITCH_MARGIN
+// vorne liegt UND die aktuelle Richtung schon MIN_DWELL_MS gehalten wurde. Das Frontend
+// zeigt genau diese Vorschau, ohne die Logik zu duplizieren.
+//   imminent = ein Wechsel ist vorgemerkt (Herausforderer klar vorne); nur die Verweil-
+//              sperre haelt ihn noch. etaMs = Restzeit dieser Sperre (0 = wechselt beim
+//              naechsten tick, in ~5 s). Alles nur eine Momentaufnahme: aendern sich die
+//              Wuensche, kann der vorgemerkte Wechsel auch wieder verschwinden.
+function directionSwitchInfo() {
+  const vibe = computeVibe();
+  const cur = state.committedDirection;
+  const info = {
+    current: cur?.mood || null,
+    challenger: null,
+    clearlyAhead: false,
+    imminent: false,
+    dwellRemainingMs: 0,
+    etaMs: null,
+    curWeight: 0,
+    challengerWeight: 0,
+  };
+  if (!cur || !cur.mood || !vibe.dominant) return info;
+
+  info.dwellRemainingMs = Math.max(0, (cur.since || 0) + MIN_DWELL_MS - Date.now());
+  const curRow = vibe.rows.find((r) => r.mood === cur.mood);
+  info.curWeight = curRow ? curRow.weight : 0;
+  if (cur.mood === vibe.dominant) return info; // aktuelle Richtung fuehrt selbst -> nichts in Sicht
+
+  const challenger = vibe.rows.find((r) => r.mood !== cur.mood); // staerkste andere Richtung
+  if (!challenger) return info;
+  info.challenger = challenger.mood;
+  info.challengerWeight = challenger.weight;
+  info.clearlyAhead = challenger.weight >= info.curWeight * SWITCH_MARGIN;
+  if (info.clearlyAhead) {
+    info.imminent = true;
+    info.etaMs = info.dwellRemainingMs; // laeuft die Verweilsperre ab, kippt der naechste tick
+  }
+  return info;
+}
+
 // Fisher-Yates-Shuffle (fuer abwechslungsreiche Pool-Auswahl).
 function shuffle(arr) {
   const a = arr.slice();
@@ -521,6 +561,7 @@ app.get("/api/state", (_req, res) => {
     playback,
     vibe: computeVibe(),
     committedDirection: state.committedDirection || null,
+    directionSwitch: directionSwitchInfo(),
     directions: state.directions || [],
     requests: state.requests.map((r) => ({ ...r, weight: 1 + (r.voterIds?.length || 0) })),
   });
