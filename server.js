@@ -106,6 +106,62 @@ const SCHLAGER_ARTISTS = new Set([
   "klaus lage","michael holm","sts","zillertaler","peter wackel","frenzy",
 ].map(norm));
 
+// Interpret -> Richtung, laeuft VOR den Genre-Regeln. Das ist die eigentliche Notloesung
+// gegen die ausgeduennten Spotify-Genres: seit Ende 2024 liefert /v1/artists fuer immer
+// mehr (auch grosse) Interpreten ein leeres genres-Array. Dann greift keine GENRE_RULE
+// und der Track faellt bis zum Audio-Fallback durch -> landet als "nicht ruhig" in
+// Party-Charts. Wer hier drin steht, wird unabhaengig von Spotify korrekt zugeordnet.
+//
+// Reihenfolge = Prioritaet (erster Teilstring-Treffer im Interpretennamen gewinnt), also
+// bei Kollisionsgefahr eindeutigere/laengere Namen zuerst. Kurze mehrdeutige Namen bewusst
+// NICHT eintragen (z. B. "queen" -> Band vs. "Queen Naija"; "nelly" -> Rap vs. Furtado).
+// Feature-Tracks mit mehreren Interpreten ("Taki Taki") lieber ueber MANUAL_MOOD pinnen,
+// sonst gewinnt hier evtl. der falsche Gast. MANUAL_MOOD (pro Track-ID) schlaegt weiterhin
+// alles. Liste ist bewusst zum Erweitern gedacht -> siehe GET /api/pool?debug=1.
+const ARTIST_MOOD = new Map([
+  // --- HipHop/RnB ---
+  ["eminem","HipHop/RnB"],["dr. dre","HipHop/RnB"],["50 cent","HipHop/RnB"],
+  ["snoop dogg","HipHop/RnB"],["kendrick lamar","HipHop/RnB"],["travis scott","HipHop/RnB"],
+  ["post malone","HipHop/RnB"],["cardi b","HipHop/RnB"],["nicki minaj","HipHop/RnB"],
+  ["macklemore","HipHop/RnB"],["wiz khalifa","HipHop/RnB"],["jay-z","HipHop/RnB"],
+  ["2pac","HipHop/RnB"],["notorious b.i.g","HipHop/RnB"],["ludacris","HipHop/RnB"],
+  ["outkast","HipHop/RnB"],["missy elliott","HipHop/RnB"],["50cent","HipHop/RnB"],
+  ["usher","HipHop/RnB"],["ne-yo","HipHop/RnB"],["chris brown","HipHop/RnB"],
+  ["akon","HipHop/RnB"],["t-pain","HipHop/RnB"],["cypress hill","HipHop/RnB"],
+  ["coolio","HipHop/RnB"],["house of pain","HipHop/RnB"],["ice cube","HipHop/RnB"],
+  ["kanye","HipHop/RnB"],["doja cat","HipHop/RnB"],["lil nas x","HipHop/RnB"],
+  ["flo rida","HipHop/RnB"],["samy deluxe","HipHop/RnB"],
+  // --- Latino ---
+  ["bad bunny","Latino"],["daddy yankee","Latino"],["j balvin","Latino"],
+  ["luis fonsi","Latino"],["don omar","Latino"],["maluma","Latino"],["karol g","Latino"],
+  ["nicky jam","Latino"],["rauw alejandro","Latino"],["myke towers","Latino"],
+  ["anitta","Latino"],["ricky martin","Latino"],["enrique iglesias","Latino"],
+  ["marc anthony","Latino"],["gente de zona","Latino"],["manu chao","Latino"],
+  ["becky g","Latino"],["farruko","Latino"],["wisin","Latino"],["yandel","Latino"],
+  // --- House/EDM ---
+  ["david guetta","House/EDM"],["calvin harris","House/EDM"],["avicii","House/EDM"],
+  ["swedish house mafia","House/EDM"],["martin garrix","House/EDM"],["tiesto","House/EDM"],
+  ["armin van buuren","House/EDM"],["alesso","House/EDM"],["kygo","House/EDM"],
+  ["marshmello","House/EDM"],["the chainsmokers","House/EDM"],["deadmau5","House/EDM"],
+  ["skrillex","House/EDM"],["robin schulz","House/EDM"],["felix jaehn","House/EDM"],
+  ["alan walker","House/EDM"],["don diablo","House/EDM"],["dj antoine","House/EDM"],
+  ["mr. da-nos","House/EDM"],["camelphat","House/EDM"],["dj tatana","House/EDM"],["parov stelar","House/EDM"],
+  // --- Rock ---
+  ["ac/dc","Rock"],["guns n roses","Rock"],["bon jovi","Rock"],["nirvana","Rock"],
+  ["foo fighters","Rock"],["red hot chili peppers","Rock"],["linkin park","Rock"],
+  ["green day","Rock"],["metallica","Rock"],["the rolling stones","Rock"],
+  ["led zeppelin","Rock"],["aerosmith","Rock"],["scorpions","Rock"],["rammstein","Rock"],
+  ["die toten hosen","Rock"],["die arzte","Rock"],["the killers","Rock"],
+  ["rage against the machine","Rock"],["system of a down","Rock"],["blink-182","Rock"],
+  ["sum 41","Rock"],["the offspring","Rock"],
+  // --- Dancehall/Reggae ---
+  ["bob marley","Dancehall/Reggae"],["sean paul","Dancehall/Reggae"],["shaggy","Dancehall/Reggae"],
+  ["damian marley","Dancehall/Reggae"],["gentleman","Dancehall/Reggae"],["patrice","Dancehall/Reggae"],
+  ["inner circle","Dancehall/Reggae"],["beenie man","Dancehall/Reggae"],["konshens","Dancehall/Reggae"],
+  ["popcaan","Dancehall/Reggae"],["seeed","Dancehall/Reggae"],["chronixx","Dancehall/Reggae"],
+  ["million stylez","Dancehall/Reggae"],
+].map(([n, m]) => [norm(n), m]));
+
 // Genre-Schluesselwoerter -> Richtung. Erster Treffer in dieser Reihenfolge gewinnt.
 //
 // ACHTUNG, die Reihenfolge ist nicht kosmetisch: verglichen wird mit gen.includes(k),
@@ -134,7 +190,14 @@ const GENRE_RULES = [
 // Handkorrektur pro Spotify-Track-ID. Schlaegt alles andere.
 // Die ID steht im Share-Link: open.spotify.com/track/<ID>?si=...
 // Beispiel: "6habFhsOp2NvshLv26DqMb": "Latino",
-const MANUAL_MOOD = {};
+const MANUAL_MOOD = {
+  // Grenzfaelle aus der Playlist "Hochzeit C&D" (Geschmacksentscheid, siehe
+  // claude/musikrichtungen-entscheid.md). Track-ID schlaegt alles andere.
+  "4KHXk0rTD80mEf7bbdK29j": "HipHop/RnB", // Suavemente (Soolking) – wegen french hip hop
+  "5bfrLQFw6AB3Be3fzvY5ER": "Latino",     // Nuttin Nuh Go So (Notch) – statt Dancehall
+  "59NraMJsLaMCVtwXTSia8i": "HipHop/RnB", // Prada (cassö/RAYE/D-Block Europe) – statt House
+  "55lijDD6OAjLFFUHU9tcDm": "HipHop/RnB", // WHERE IS MY HUSBAND! (RAYE) – r&b/pop rap
+};
 
 // Reine Zuordnung aus Signalen – ohne Netzwerk, daher gut testbar.
 function moodFromSignals({ genres = [], artistName = "", title = "", year = null, audio = null }) {
@@ -142,6 +205,13 @@ function moodFromSignals({ genres = [], artistName = "", title = "", year = null
   const a = norm(artistName);
   if ([...MUNDART_ARTISTS].some((x) => a.includes(x))) return "Mundart";
   if ([...SCHLAGER_ARTISTS].some((x) => a.includes(x))) return "Schlager";
+
+  // Eindeutige Interpreten vor den Genre-Regeln abfangen. Faengt genau die Faelle,
+  // in denen Spotify keine Genres (mehr) liefert und der Track sonst in Party-Charts
+  // durchrutscht (z. B. Eminem -> HipHop/RnB).
+  for (const [name, mood] of ARTIST_MOOD) {
+    if (a.includes(name)) return mood;
+  }
 
   // Genre-Tags zuerst. Frueher lief die "sehr ruhig"-Abkuerzung hier davor – das hat
   // ruhige Latino-/Reggae-Titel still nach Slow/Love gezogen und damit aus dem Pool
@@ -836,7 +906,16 @@ app.post("/api/reset", djOnly, (_req, res) => { state = emptyState(); persist();
 
 // Wie sieht der Pool aus? Zeigt pro Richtung, wie viele Songs aus der Playlist
 // dort gelandet sind – damit sichtbar wird, welche Richtung noch leer ist.
-app.get("/api/pool", (_req, res) => {
+app.get("/api/pool", (req, res) => {
+  // ?debug=1 zeigt pro Track zusaetzlich die von Spotify gelieferten Genres. Leeres
+  // [] heisst: Spotify hat keine Genres -> Track wurde nur ueber Name/Audio-Fallback
+  // eingeordnet. Genau diese Interpreten gehoeren ggf. in ARTIST_MOOD.
+  const debug = req.query.debug === "1" || req.query.debug === "true";
+  const trackOut = (t) => {
+    const base = { title: t.title, artist: t.artist, trackId: t.trackId };
+    if (debug) base.genres = [...new Set((t.artistIds || []).flatMap((id) => artistGenreCache.get(id) || []))];
+    return base;
+  };
   res.json({
     playlistId: SPOTIFY_PLAYLIST_ID || null,
     total: poolMeta.total,
@@ -846,7 +925,7 @@ app.get("/api/pool", (_req, res) => {
     byMood: Object.fromEntries(MOOD_NAMES.map((m) => [m, {
       count: (poolByMood[m] || []).length,
       autoFill: !NO_AUTOFILL.has(m),
-      tracks: (poolByMood[m] || []).map((t) => ({ title: t.title, artist: t.artist, trackId: t.trackId })),
+      tracks: (poolByMood[m] || []).map(trackOut),
     }])),
   });
 });
