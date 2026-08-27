@@ -54,9 +54,6 @@ const MIN_DWELL_MS = 15 * 60000; // Richtung wird mind. 15 Min gehalten, bevor s
 const SWITCH_MARGIN = 1.5;       // Neue Richtung muss 1.5x staerker sein als die aktuelle, sonst kein Wechsel
 const POOL_FLOOR = 3;            // so viele kommende Pool-Songs immer bereithalten
 const WISH_EVERY = 3;            // 1 Gastwunsch je WISH_EVERY Songs -> Verhaeltnis Wunsch:Pool = 1:2
-// true  = Auto-Advance schickt IMMER die oberste Zeile der Queue (genau das, was der DJ sieht).
-// false = 1:2 Wunsch:Pool-Mischung wie bisher (Pool-Songs werden bewusst dazwischen gestreut).
-const STRICT_QUEUE_ORDER = false;
 
 // Kuratierte Publikumshits pro Richtung. Werden per Spotify-Suche zu echten Tracks aufgeloest.
 // Frei anpassbar: Zeilen sind einfach "Titel Interpret".
@@ -90,6 +87,7 @@ const MUNDART_ARTISTS = new Set([
   "stiller has","florian ast","stress","nemo","gotthard","zibbz","dabu fantastic","dabu fantastik",
   "marc sway","seven","pegasus","troubas kater","damian lynn",
   "polo hofer","stephan eicher","hanery amman","zuri west","lo & leduc",
+  "phenomden","lexx","open season","greis","baze","tinu heiniger",
 ].map(norm));
 const SCHLAGER_ARTISTS = new Set([
   "helene fischer","andreas gabalier","dj otzi","udo jurgens","roland kaiser","beatrice egli",
@@ -111,14 +109,20 @@ const SCHLAGER_ARTISTS = new Set([
 //   "latin house" enthaelt "house"   -> Latino muss vor House/EDM stehen
 //   "dubstep"     enthaelt "dub"     -> "dub" darf kein Dancehall-Keyword sein
 //   "roots rock"  enthaelt "roots"   -> "roots" darf kein Dancehall-Keyword sein
+//   "skate punk"  enthaelt "ska"     -> "ska" darf kein Dancehall-Keyword sein
+//   "swiss house" enthaelt "swiss"   -> Mundart steht deshalb ZULETZT, sonst landen
+//                                       Schweizer House-/Eurodance-Produzenten
+//                                       (DJ Tatana, Mr. Da-Nos, DJ BoBo) in Mundart.
+//                                       Echte Mundart-Acts fangen wir ueber
+//                                       MUNDART_ARTISTS ab, das laeuft ohnehin vorher.
 const GENRE_RULES = [
-  ["Mundart",          ["mundart","swiss","schweizer","schwiizer"]],
   ["Schlager",         ["schlager","volksmusik","volkstumlich","apres","ballermann","discofox","stimmung","austropop"]],
   ["Latino",           ["latin","reggaeton","regueton","urbano","dembow","bachata","salsa","merengue","cumbia","kuduro","funk carioca","funk ostentacao","brazilian","brasil","mambo","perreo","sertanejo"]],
-  ["Dancehall/Reggae", ["dancehall","reggae","ragga","soca","ska"]],
+  ["Dancehall/Reggae", ["dancehall","reggae","ragga","soca"]],
   ["HipHop/RnB",       ["hip hop","hip-hop","hiphop","rap","trap","r&b","rnb","urban contemporary","drill","grime","boom bap"]],
   ["House/EDM",        ["house","techno","trance","edm","electro","eurodance","big room","future bass","dubstep","drum and bass","hardstyle","hands up","italo dance","tech house","deep house","rave"]],
   ["Rock",             ["rock","metal","punk","grunge","hardcore","emo","thrash","grindcore"]],
+  ["Mundart",          ["mundart","schwiizer","schweizerdeutsch","swiss"]],
 ];
 
 // Handkorrektur pro Spotify-Track-ID. Schlaegt alles andere.
@@ -407,12 +411,6 @@ function pickNextForQueue() {
   const pins = queued.filter((r) => r.pinned).sort((a, b) => (a.order || 0) - (b.order || 0));
   if (pins.length) return { track: pins[0], counts: false };
 
-  // Strikt-Modus: exakt die oberste sichtbare Zeile nehmen (kein Wunsch/Pool-Mischen).
-  if (STRICT_QUEUE_ORDER) {
-    const top = queued.slice().sort(queueSort)[0];
-    return top ? { track: top, counts: false } : null;
-  }
-
   const wishes = queued
     .filter((r) => !r.auto && !r.dj)
     .sort((a, b) => likeCount(b) - likeCount(a) || (a.order || 0) - (b.order || 0));
@@ -671,7 +669,7 @@ app.post("/api/requests/:id/push", djOnly, async (req, res) => {
   if (!r) return res.status(404).json({ error: "not_found" });
   try {
     const resp = await djFetch("/me/player/queue?" + new URLSearchParams({ uri: r.uri }), { method: "POST" });
-    if (resp.ok) {                              // 204 oder 200 -> beides erfolgreich
+    if (resp.status === 204) {
       r.sent = true;
       persist();
       return res.json({ ok: true });
@@ -957,20 +955,15 @@ async function tick() {
     if (remaining <= AUTO_THRESHOLD_MS && auto.pushedForUri !== uri) {
       const pick = pickNextForQueue();
       if (pick?.track) {
-        // Guard SOFORT setzen (vor dem await): sonst starten die naechsten 5s-Ticks,
-        // bevor Spotify geantwortet hat, und schicken denselben Song mehrfach.
-        auto.pushedForUri = uri;
         try {
           const resp = await djFetch("/me/player/queue?" + new URLSearchParams({ uri: pick.track.uri }), { method: "POST" });
-          if (resp.ok) {                        // Spotify meldet mal 204, mal 200 -> beides = erfolgreich
+          if (resp.status === 204) {
             pick.track.sent = true;
-            if (pick.counts) auto.slot += 1;    // nur echte Wunsch/Pool-Slots zaehlen fuers Verhaeltnis
+            auto.pushedForUri = uri;
+            if (pick.counts) auto.slot += 1; // nur echte Wunsch/Pool-Slots zaehlen fuers Verhaeltnis
             persist();
-          } else {
-            auto.pushedForUri = null;           // z.B. kein aktives Geraet -> naechster Tick versucht es erneut
-            await resp.text().catch(() => {});  // Body schliessen
           }
-        } catch { auto.pushedForUri = null; }
+        } catch {}
       }
     }
   }
