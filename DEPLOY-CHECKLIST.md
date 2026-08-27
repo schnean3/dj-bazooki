@@ -134,6 +134,21 @@ Häufige Fehler:
 
 ---
 
+## 8c · Voting testen ("wer bestimmt den nächsten Song")
+
+1. `guests.csv` im Repo-Root pflegen (`name;titel;interpret`, mit Header-Zeile). Danach `POST /api/vote/unresolved` — pardon, **`GET /api/vote/unresolved`** (DJ eingeloggt, z. B. per Browser auf `https://dj-bazooki.onrender.com/api/vote/unresolved`) zeigt, welche Zeilen Spotify nicht finden konnte.
+2. Im DJ-Pult ist der Schalter **Voting an** (Standard = an). Läuft ein Song, startet automatisch alle `VOTE_INTERVAL_MIN` Minuten (Standard 20) eine Runde.
+3. Zum schnellen Testen `VOTE_INTERVAL_MIN=1` in den Render-Umgebungsvariablen setzen (temporär), Song abspielen, ~1 Min warten.
+4. Auf `/guest.html` sollte ein Pop-up mit 4 Namen erscheinen, Countdown läuft. Nach Antippen eines Namens ist der Vote gesperrt.
+5. Voting schliesst automatisch 1 Min vor Songende (oder — falls der Song dafür schon zu kurz ist — 1 Min vor Ende des nächsten Songs). Der Gewinnername erscheint kurz im Pop-up, danach verschwindet es von selbst.
+6. Der gewonnene Song landet ganz oben in der DJ-Queue (Badge nicht extra markiert, aber `pinned` — läuft als Nächstes, unabhängig von der aktuellen Richtung).
+
+**Prüfpunkt:** Nach einer geschlossenen Runde mit Stimmen steht ein neuer, ganz oben gepinnter Song in der Queue, und im DJ-Pult zeigt die Statuszeile den Namen des Gewinners.
+
+Nicht vergessen: `VOTE_INTERVAL_MIN` nach dem Test wieder auf 20 (oder das gewünschte Intervall) zurücksetzen.
+
+---
+
 ## 9 · Betriebsweise für den Tag
 
 - Der DJ startet als Basis eine **normale Hochzeits-Playlist** in Spotify. Wünsche werden davor geschoben, so wird es nie still.

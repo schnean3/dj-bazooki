@@ -30,6 +30,8 @@ const {
   // Horn/Tröte: URI des Effekts (Episode ODER Track) + Intervall in Minuten.
   HORN_URI = "spotify:episode:7i8ANZDp3UtjiGPJoKXP5f",
   HORN_INTERVAL_MIN = 15,
+  // Gäste-Voting: alle VOTE_INTERVAL_MIN Minuten eine Runde "wer bestimmt den naechsten Song".
+  VOTE_INTERVAL_MIN = 20,
 } = process.env;
 
 if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
@@ -60,6 +62,14 @@ const WISH_EVERY = 3;            // 1 Gastwunsch je WISH_EVERY Songs -> Verhaelt
 // true  = Auto-Advance schickt IMMER die oberste Zeile der Queue (genau das, was der DJ sieht).
 // false = 1:2 Wunsch:Pool-Mischung wie bisher (Pool-Songs werden bewusst dazwischen gestreut).
 const STRICT_QUEUE_ORDER = false;
+
+// --- Gaeste-Voting ("wer bestimmt den naechsten Song") ---
+const VOTE_INTERVAL_MS = Math.max(1, Number(VOTE_INTERVAL_MIN) || 20) * 60000;
+const VOTE_CANDIDATES = 4;             // so viele Gaeste pro Runde zur Auswahl
+const VOTE_CLOSE_BEFORE_END_MS = 60000;  // Voting schliesst 1 Min vor Songende
+const VOTE_MIN_WINDOW_MS = 90000;        // unter diesem Fenster wird stattdessen ans naechste Songende gebunden
+const VOTE_CLOSE_FLOOR_MS = 20000;       // Sicherheits-Minimum, falls auch der naechste Song sehr kurz ist
+const VOTE_RESULT_DISPLAY_MS = 15000;    // wie lange der Gewinnername nach Schluss noch angezeigt wird
 
 // Kuratierte Publikumshits pro Richtung. Werden per Spotify-Suche zu echten Tracks aufgeloest.
 // Frei anpassbar: Zeilen sind einfach "Titel Interpret".
@@ -387,7 +397,11 @@ async function classifyTrack(track) {
 
 /* ----------------------------- persistente State ----------------------------- */
 const DB_FILE = join(process.env.DATA_DIR || __dirname, "data.json");
-const emptyState = () => ({ requests: [], nowPlaying: null, log: [], autoAdvance: true, autoFill: true, autoApprove: true, hornEnabled: false, directions: [], committedDirection: null });
+const emptyState = () => ({
+  requests: [], nowPlaying: null, log: [], autoAdvance: true, autoFill: true, autoApprove: true,
+  hornEnabled: true, directions: [], committedDirection: null,
+  voteEnabled: true, vote: null, voteWinners: [], nextVoteAt: Date.now() + VOTE_INTERVAL_MS,
+});
 let state = emptyState();
 try {
   if (existsSync(DB_FILE)) state = { ...emptyState(), ...JSON.parse(readFileSync(DB_FILE, "utf8")) };
@@ -706,8 +720,26 @@ app.get("/api/search", async (req, res) => {
   }
 });
 
+// Vote-Ausschnitt fuers Frontend: nie das Lied verraten, nur Namen + Status.
+// guestId wird als Query mitgegeben, damit jeder Gast sieht, ob & fuer wen ER
+// schon gestimmt hat, ohne dass andere Gaeste das mitkriegen.
+function voteForClient(guestId) {
+  const v = state.vote;
+  if (!v) return null;
+  const myPick = guestId && v.votes[guestId] != null ? v.votes[guestId] : null;
+  return {
+    id: v.id,
+    names: v.names,
+    closesAt: v.closesAt,           // null = Schliesszeit steht noch nicht fest (wartet auf Songwechsel)
+    closed: v.closed,
+    winnerName: v.closed ? v.winnerName : null,
+    voted: myPick != null,
+    myPick,
+  };
+}
+
 /* ---- State (Gaeste + DJ pollen das) ---- */
-app.get("/api/state", (_req, res) => {
+app.get("/api/state", (req, res) => {
   res.json({
     loggedIn: !!dj.access,
     nowPlaying: state.nowPlaying,
@@ -716,6 +748,8 @@ app.get("/api/state", (_req, res) => {
     autoApprove: state.autoApprove,
     hornEnabled: !!state.hornEnabled,
     hornInMs: state.hornEnabled ? Math.max(0, HORN_INTERVAL_MS - (Date.now() - horn.lastTs)) : null,
+    voteEnabled: !!state.voteEnabled,
+    vote: voteForClient(req.query.guestId),
     playback,
     vibe: computeVibe(),
     committedDirection: state.committedDirection || null,
@@ -765,6 +799,39 @@ app.post("/api/horn", djOnly, (req, res) => {
 app.post("/api/horn/test", djOnly, async (_req, res) => {
   const ok = await queueHorn();
   res.status(ok ? 200 : 409).json({ ok, error: ok ? undefined : "no_device_or_uri" });
+});
+
+// Voting an/aus.
+app.post("/api/vote/toggle", djOnly, (req, res) => {
+  state.voteEnabled = !!req.body?.on;
+  persist();
+  res.json({ ok: true, voteEnabled: state.voteEnabled });
+});
+
+// Gast stimmt fuer einen der 4 Kandidaten. Ein Vote pro Gast und Runde, nicht aenderbar.
+app.post("/api/vote/cast", (req, res) => {
+  const { guestId, choice } = req.body || {};
+  const v = state.vote;
+  if (!guestId) return res.status(400).json({ error: "guestId fehlt" });
+  if (!v || v.closed) return res.status(409).json({ error: "no_active_vote" });
+  if (!Number.isInteger(choice) || choice < 0 || choice >= v.names.length) return res.status(400).json({ error: "invalid_choice" });
+  if (v.votes[guestId] != null) return res.status(409).json({ error: "already_voted" });
+  v.votes[guestId] = choice;
+  persist();
+  res.json({ ok: true });
+});
+
+// Zeigt, welche Gaeste-Songs sich nicht auf Spotify finden liessen (guests.csv pruefen).
+app.get("/api/vote/unresolved", djOnly, async (_req, res) => {
+  await loadGuests();
+  res.json({ total: guestsMeta.total, resolved: guestsMeta.resolved, unresolved: guestsMeta.unresolved, error: guestsMeta.error, winners: state.voteWinners || [] });
+});
+
+// guests.csv sofort neu einlesen (z.B. nachdem Zeilen ergaenzt wurden).
+app.post("/api/guests/reload", djOnly, async (_req, res) => {
+  guestResolveCache.clear();
+  await loadGuests(true);
+  res.json({ ok: !guestsMeta.error, total: guestsMeta.total, resolved: guestsMeta.resolved, error: guestsMeta.error });
 });
 
 /* ---- Gast: Wunsch abgeben (max 3/Std) ---- */
@@ -1166,12 +1233,164 @@ async function queueHorn() {
   return false;
 }
 
+/* ----------------------------- Gaeste-Voting ----------------------------- */
+// Liste kommt aus guests.csv (name;titel;interpret, Header-Zeile). Jede Zeile wird
+// einmal per Spotify-Suche zu einem echten Track aufgeloest und gecacht -- danach
+// reine In-Memory-Lookups. Die Datei bleibt die Quelle der Wahrheit; ein Redeploy
+// (git push) laedt sie neu ein.
+const GUESTS_FILE = join(__dirname, "guests.csv");
+const guestResolveCache = new Map(); // "titel|||interpret" -> aufgeloester Track oder null
+let guests = [];                     // [{ name, title, artist, uri, trackId, image, resolved }]
+let guestsMeta = { ts: 0, total: 0, resolved: 0, unresolved: [], error: null };
+const GUESTS_REFRESH_MS = 10 * 60000;
+
+function parseGuestsCsv(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const rows = [];
+  for (const line of lines) {
+    const parts = line.split(";").map((p) => p.trim());
+    if (parts[0]?.toLowerCase() === "name" && parts[1]?.toLowerCase() === "titel") continue; // Header
+    const [name, title, artist] = parts;
+    if (name && title) rows.push({ name, title, artist: artist || "" });
+  }
+  return rows;
+}
+
+async function loadGuests(force = false) {
+  if (!force && Date.now() - guestsMeta.ts < GUESTS_REFRESH_MS && guests.length) return;
+  let rows;
+  try {
+    rows = parseGuestsCsv(readFileSync(GUESTS_FILE, "utf8"));
+  } catch (e) {
+    guestsMeta = { ...guestsMeta, ts: Date.now(), error: "guests.csv nicht gefunden oder unlesbar: " + e.message };
+    return;
+  }
+  const out = [];
+  const unresolved = [];
+  for (const row of rows) {
+    const key = norm(row.title) + "|||" + norm(row.artist);
+    let t = guestResolveCache.get(key);
+    if (t === undefined) {
+      t = await resolveTrack(`${row.title} ${row.artist}`.trim());
+      guestResolveCache.set(key, t);
+    }
+    if (t) out.push({ name: row.name, title: t.title, artist: t.artist, uri: t.uri, trackId: t.trackId, image: t.image, resolved: true });
+    else { out.push({ name: row.name, title: row.title, artist: row.artist, uri: null, trackId: null, image: null, resolved: false }); unresolved.push(`${row.name}: ${row.title} — ${row.artist}`); }
+  }
+  guests = out;
+  guestsMeta = { ts: Date.now(), total: out.length, resolved: out.length - unresolved.length, unresolved, error: null };
+}
+
+// Legt einen Track ganz oben in die Queue (wie ein DJ-Pin) -- unabhaengig von der
+// gerade laufenden Richtung, und zaehlt NICHT ins 1:2 Wunsch/Pool-Verhaeltnis
+// (pickNextForQueue nimmt Pins immer zuerst, siehe dort).
+async function pinToTop(track, opts = {}) {
+  const existing = state.requests.find((r) => r.uri === track.uri && r.status !== "played");
+  if (existing) {
+    Object.assign(existing, { status: "queued", pinned: true, sent: false, order: nextOrder() }, opts);
+    return existing;
+  }
+  const mood = await classifyTrack(track).catch(() => "Party-Charts");
+  const req = {
+    id: uid(), uri: track.uri, trackId: track.trackId, title: track.title, artist: track.artist,
+    image: track.image || null, mood, status: "queued", order: nextOrder(), voterIds: [],
+    addedBy: "DJ", byId: "dj", pinned: true, ts: Date.now(), ...opts,
+  };
+  state.requests.push(req);
+  return req;
+}
+
+function remainingPlaybackMs() {
+  return playback.duration > 0 ? Math.max(0, playback.duration - playback.progress) : null;
+}
+
+// Startet eine neue Runde, sofern Voting an ist, kein Voting laeuft, faellig ist,
+// Musik laeuft -- und genug Gaeste uebrig sind, die noch nicht gewonnen haben.
+async function maybeStartVote() {
+  if (!state.voteEnabled || state.vote || Date.now() < state.nextVoteAt) return;
+  if (!dj.access || !playback.is_playing || !(playback.duration > 0)) return;
+  await loadGuests();
+  const pool = guests.filter((g) => g.resolved && !state.voteWinners.includes(g.name));
+  if (pool.length < VOTE_CANDIDATES) { state.nextVoteAt = Date.now() + 60000; return; } // still pausieren, in 1 Min erneut pruefen
+
+  const names = shuffle(pool).slice(0, VOTE_CANDIDATES).map((g) => g.name);
+  const remaining = remainingPlaybackMs();
+  const bigEnough = remaining != null && (remaining - VOTE_CLOSE_BEFORE_END_MS) >= VOTE_MIN_WINDOW_MS;
+
+  state.vote = {
+    id: uid(),
+    names,
+    votes: {},              // guestId -> Kandidaten-Index (0..3)
+    openedAt: Date.now(),
+    openUri: playback.uri,
+    boundToNextSong: !bigEnough,
+    closesAt: bigEnough ? Date.now() + (remaining - VOTE_CLOSE_BEFORE_END_MS) : null,
+    closed: false,
+    winnerName: null,
+    clearAt: null,
+  };
+  persist();
+}
+
+// Ist eine Runde ans naechste Songende gebunden (aktueller Song war schon zu kurz),
+// wird hier -- sobald ein neuer Song laeuft -- die Schliesszeit nachgetragen.
+function maybeBindVote() {
+  const v = state.vote;
+  if (!v || v.closed || !v.boundToNextSong || v.closesAt != null) return;
+  if (!playback.uri || playback.uri === v.openUri) return; // noch derselbe Song
+  const remaining = remainingPlaybackMs();
+  if (remaining == null) return;
+  v.closesAt = Date.now() + Math.max(VOTE_CLOSE_FLOOR_MS, remaining - VOTE_CLOSE_BEFORE_END_MS);
+  persist();
+}
+
+function pickVoteWinnerIndex(v) {
+  const counts = new Array(v.names.length).fill(0);
+  for (const idx of Object.values(v.votes)) if (idx >= 0 && idx < counts.length) counts[idx]++;
+  const max = Math.max(...counts);
+  if (max <= 0) return null; // niemand hat abgestimmt -> Runde entfaellt
+  const top = counts.map((c, i) => (c === max ? i : -1)).filter((i) => i >= 0);
+  return top[Math.floor(Math.random() * top.length)];
+}
+
+async function maybeCloseVote() {
+  const v = state.vote;
+  if (!v || v.closed) return;
+  if (v.closesAt == null || Date.now() < v.closesAt) return;
+
+  const winIdx = pickVoteWinnerIndex(v);
+  v.closed = true;
+  v.clearAt = Date.now() + VOTE_RESULT_DISPLAY_MS;
+  state.nextVoteAt = Date.now() + VOTE_INTERVAL_MS;
+
+  if (winIdx != null) {
+    const winnerName = v.names[winIdx];
+    v.winnerName = winnerName;
+    const guest = guests.find((g) => g.name === winnerName && g.resolved);
+    if (guest) {
+      await pinToTop({ uri: guest.uri, trackId: guest.trackId, title: guest.title, artist: guest.artist, image: guest.image },
+        { addedBy: winnerName, byId: "vote", voteWin: true });
+      state.voteWinners = [...(state.voteWinners || []), winnerName];
+    }
+  }
+  persist();
+}
+
+function maybeClearVote() {
+  const v = state.vote;
+  if (v && v.closed && v.clearAt != null && Date.now() >= v.clearAt) { state.vote = null; persist(); }
+}
+
 /* ----------------------------- Auto-Advance-Loop ----------------------------- */
 // Alle 5s: laufenden Song lesen, nowPlaying abgleichen, ggf. naechsten nachschieben.
 async function tick() {
   try { updateCommittedDirection(); } catch {}
   try { await loadPool(); } catch {}   // laedt nur, wenn PLAYLIST_REFRESH_MS um ist
   try { await autoFillMaybe(); } catch {}
+  try { await maybeStartVote(); } catch (e) { console.error("vote start", e.message); }
+  try { maybeBindVote(); } catch {}
+  try { await maybeCloseVote(); } catch (e) { console.error("vote close", e.message); }
+  try { maybeClearVote(); } catch {}
   if (!dj.access) return;
   let cur;
   try {
@@ -1236,6 +1455,7 @@ async function tick() {
   }
 }
 setInterval(tick, 5000);
+loadGuests().catch((e) => console.error("guests.csv laden fehlgeschlagen:", e.message));
 
 app.listen(PORT, () => {
   const base = process.env.PUBLIC_URL || `http://127.0.0.1:${PORT}`;
