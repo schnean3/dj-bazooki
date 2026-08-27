@@ -479,9 +479,9 @@ function computeVibe() {
   const tally = {};
   let total = 0;
   const bump = (mood, w) => { tally[mood] = (tally[mood] || 0) + w; total += w; };
-  // Lieder-Wuensche (keine Auto-Fill-Songs): Gewicht = 1 + Herzen
-  for (const r of state.requests) if (r.status !== "played" && !r.auto && !r.dj) bump(r.mood, 1 + (r.voterIds?.length || 0));
-  // Richtungs-Stimmen: Gewicht 1, nur solange sie aktuell sind
+  // Richtungswahl zaehlt NUR die explizite Richtungs-Selektion der Gaeste (state.directions).
+  // Lieder-Wuensche fliessen bewusst NICHT ein - sonst wuerde ein einzelner populaerer Wunsch
+  // die Richtung verschieben, ohne dass jemand diese Richtung tatsaechlich gewaehlt hat.
   for (const d of state.directions || []) if (now - d.ts < DIRECTION_WINDOW) bump(d.mood, 1);
   const rows = Object.entries(tally)
     .map(([mood, weight]) => ({ mood, weight, pct: total ? weight / total : 0 }))
@@ -541,6 +541,7 @@ function updateCommittedDirection() {
   const clearlyAhead = challenger.weight >= curWeight * SWITCH_MARGIN;
   if (dwellOk && clearlyAhead) {
     state.committedDirection = { mood: challenger.mood, since: now };
+    state.directions = []; // Richtungswechsel: Selektion wieder auf null, Gaeste waehlen neu
     persist();
   }
 }
