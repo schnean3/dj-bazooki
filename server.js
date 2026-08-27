@@ -54,6 +54,9 @@ const MIN_DWELL_MS = 15 * 60000; // Richtung wird mind. 15 Min gehalten, bevor s
 const SWITCH_MARGIN = 1.5;       // Neue Richtung muss 1.5x staerker sein als die aktuelle, sonst kein Wechsel
 const POOL_FLOOR = 3;            // so viele kommende Pool-Songs immer bereithalten
 const WISH_EVERY = 3;            // 1 Gastwunsch je WISH_EVERY Songs -> Verhaeltnis Wunsch:Pool = 1:2
+// true  = Auto-Advance schickt IMMER die oberste Zeile der Queue (genau das, was der DJ sieht).
+// false = 1:2 Wunsch:Pool-Mischung wie bisher (Pool-Songs werden bewusst dazwischen gestreut).
+const STRICT_QUEUE_ORDER = false;
 
 // Kuratierte Publikumshits pro Richtung. Werden per Spotify-Suche zu echten Tracks aufgeloest.
 // Frei anpassbar: Zeilen sind einfach "Titel Interpret".
@@ -411,6 +414,12 @@ function pickNextForQueue() {
   const pins = queued.filter((r) => r.pinned).sort((a, b) => (a.order || 0) - (b.order || 0));
   if (pins.length) return { track: pins[0], counts: false };
 
+  // Strikt-Modus: exakt die oberste sichtbare Zeile nehmen (kein Wunsch/Pool-Mischen).
+  if (STRICT_QUEUE_ORDER) {
+    const top = queued.slice().sort(queueSort)[0];
+    return top ? { track: top, counts: false } : null;
+  }
+
   const wishes = queued
     .filter((r) => !r.auto && !r.dj)
     .sort((a, b) => likeCount(b) - likeCount(a) || (a.order || 0) - (b.order || 0));
@@ -669,7 +678,7 @@ app.post("/api/requests/:id/push", djOnly, async (req, res) => {
   if (!r) return res.status(404).json({ error: "not_found" });
   try {
     const resp = await djFetch("/me/player/queue?" + new URLSearchParams({ uri: r.uri }), { method: "POST" });
-    if (resp.status === 204) {
+    if (resp.ok) {                              // 204 oder 200 -> beides erfolgreich
       r.sent = true;
       persist();
       return res.json({ ok: true });
@@ -955,15 +964,20 @@ async function tick() {
     if (remaining <= AUTO_THRESHOLD_MS && auto.pushedForUri !== uri) {
       const pick = pickNextForQueue();
       if (pick?.track) {
+        // Guard SOFORT setzen (vor dem await): sonst starten die naechsten 5s-Ticks,
+        // bevor Spotify geantwortet hat, und schicken denselben Song mehrfach.
+        auto.pushedForUri = uri;
         try {
           const resp = await djFetch("/me/player/queue?" + new URLSearchParams({ uri: pick.track.uri }), { method: "POST" });
-          if (resp.status === 204) {
+          if (resp.ok) {                        // Spotify meldet mal 204, mal 200 -> beides = erfolgreich
             pick.track.sent = true;
-            auto.pushedForUri = uri;
-            if (pick.counts) auto.slot += 1; // nur echte Wunsch/Pool-Slots zaehlen fuers Verhaeltnis
+            if (pick.counts) auto.slot += 1;    // nur echte Wunsch/Pool-Slots zaehlen fuers Verhaeltnis
             persist();
+          } else {
+            auto.pushedForUri = null;           // z.B. kein aktives Geraet -> naechster Tick versucht es erneut
+            await resp.text().catch(() => {});  // Body schliessen
           }
-        } catch {}
+        } catch { auto.pushedForUri = null; }
       }
     }
   }
