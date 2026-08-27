@@ -187,6 +187,7 @@
       renderNow($("now"), data.nowPlaying);
       renderPlaybar(data);
 
+      const curMood = data.committedDirection?.mood || null;
       const pending = data.requests.filter((r) => r.status === "pending").sort((a, b) => b.weight - a.weight || a.ts - b.ts);
       const queue = data.requests.filter((r) => r.status === "queued" && r.id !== data.nowPlaying?.id)
         .sort(queueSort);
@@ -211,10 +212,12 @@
         const upDown = el("div", { style: "display:flex;flex-direction:column;gap:2px" },
           el("button", { class: "btn ghost", style: "padding:1px 5px;font-size:10px", disabled: i === 0 ? "" : null, onclick: () => act(`/api/requests/${r.id}/move`, { dir: "up" }) }, "▲"),
           el("button", { class: "btn ghost", style: "padding:1px 5px;font-size:10px", disabled: i === queue.length - 1 ? "" : null, onclick: () => act(`/api/requests/${r.id}/move`, { dir: "down" }) }, "▼"));
+        const offDir = !r.dj && !r.auto && curMood && r.mood !== curMood;
         const title = el("div", { style: "display:flex;align-items:center;gap:8px" },
           el("span", { class: "truncate", style: "font-weight:600" }, r.title),
           r.dj ? el("span", { class: "badge", style: "background:var(--rose)" }, "DJ") : null,
           r.auto ? el("span", { class: "badge", style: `background:${MOODS[r.mood].color}` }, "auto") : null,
+          offDir ? el("span", { class: "badge", style: "background:var(--border);color:var(--dim)", title: "Wartet, bis diese Richtung läuft" }, "⏳ wartet") : null,
           r.sent ? el("span", { class: "badge", style: "background:var(--border);color:var(--dim)" }, "gesendet") : null);
         qc.append(el("div", { class: "row" }, upDown,
           el("div", { style: "width:18px;color:var(--dim);font-family:var(--display);font-size:16px" }, i + 1),

@@ -32,6 +32,12 @@
     <div id="now" class="row now" style="margin-top:16px"></div>
 
     <section style="margin-top:20px">
+      <div class="section-head">Wähl eine Richtung</div>
+      <p class="muted" style="font-size:13px;margin:-6px 0 10px">Sag, worauf du gerade Lust hast. Zählt nicht gegen deine Wünsche.</p>
+      <div id="dir-chips" class="chips"></div>
+    </section>
+
+    <section style="margin-top:20px">
       <div style="display:flex;justify-content:space-between;align-items:baseline">
         <div class="section-head">Wünsch dir ein Lied</div>
         <div id="remaining" style="font-size:12.5px;font-weight:600;color:var(--gold)"></div>
@@ -43,6 +49,12 @@
     <section style="margin-top:20px">
       <div class="section-head">Wunschliste (<span id="wl-count">0</span>)</div>
       <div id="wishlist" style="display:flex;flex-direction:column;gap:8px"></div>
+    </section>
+
+    <section id="waitsec" style="margin-top:20px;display:none">
+      <div class="section-head">Wartet auf ihre Richtung (<span id="ww-count">0</span>)</div>
+      <p class="muted" style="font-size:12.5px;margin:-6px 0 10px">Kommt dran, sobald diese Richtung läuft — Herzen sammeln lohnt sich schon jetzt.</p>
+      <div id="waitlist" style="display:flex;flex-direction:column;gap:8px"></div>
     </section>
   </div>
 
@@ -115,35 +127,72 @@
       refresh();
     }
 
+    // --- Richtung wählen (eine pro Gast, jederzeit änderbar; ✕ hebt sie auf) ---
+    async function setDirection(mood) {
+      await api("/api/direction", { method: "POST", body: JSON.stringify({ guestId: gid, mood }) });
+      if (mood) toast(`Richtung gewählt: ${MOODS[mood].emoji} ${mood}`);
+      refresh();
+    }
+    function renderDirections(dirs) {
+      const mine = (dirs || []).find((d) => d.byId === gid);
+      const box = $("dir-chips");
+      box.innerHTML = "";
+      for (const [name, m] of Object.entries(MOODS)) {
+        const active = mine && mine.mood === name;
+        box.append(el("button", {
+          class: "chip",
+          style: active ? `background:${m.color};color:#3a2f1c;border-color:${m.color}` : "",
+          onclick: () => setDirection(active ? null : name),
+        }, `${m.emoji} ${name}` + (active ? "  ✕" : "")));
+      }
+    }
+
+    // Eine Wunsch-Zeile bauen (für beide Listen gleich).
+    function wishRow(r, np) {
+      const mine = r.byId === gid;
+      const voted = mine || r.voterIds.includes(gid);
+      const playing = np?.id === r.id;
+      const badge = playing
+        ? el("span", { class: "badge", style: "background:var(--gold)" }, "läuft")
+        : r.status === "queued"
+        ? el("span", { class: "badge", style: `background:${MOODS[r.mood].color}` }, "in Queue")
+        : el("span", { class: "badge", style: "background:var(--border);color:var(--dim)" }, "wartet");
+      return el("div", { class: "row" },
+        el("div", { style: "min-width:0;flex:1" },
+          el("div", { style: "display:flex;align-items:center;gap:8px" },
+            el("span", { class: "truncate", style: "font-weight:600" }, r.title), badge),
+          el("div", { class: "truncate muted", style: "font-size:12.5px" }, `${r.artist} · ${MOODS[r.mood].emoji} ${r.mood}`),
+          el("div", { class: "truncate", style: "font-size:12px;color:var(--gold);margin-top:2px" }, `von ${mine ? "dir" : r.addedBy}`)),
+        el("button", { class: "pill", style: voted ? `color:${MOODS[r.mood].color};border-color:${MOODS[r.mood].color}66` : "", disabled: voted ? "" : null, onclick: voted ? null : () => vote(r.id) }, `♥ ${r.weight}`));
+    }
+
     // --- Polling / Render ---
     async function refresh() {
       const { data } = await api("/api/state");
       renderVibe($("vibe"), data.vibe, false);
       renderSwitchHint($("switch"), data.directionSwitch, data.vibe, "guest");
       renderNow($("now"), data.nowPlaying);
+      renderDirections(data.directions);
 
-      const active = data.requests.filter((r) => r.status !== "played").sort((a, b) => b.weight - a.weight || a.ts - b.ts);
-      $("wl-count").textContent = active.length;
+      const all = data.requests.filter((r) => r.status !== "played");
+      const curMood = data.committedDirection?.mood || null;
+      const byLove = (a, b) => b.weight - a.weight || a.ts - b.ts;
+      // Wünsche der laufenden Richtung spielen jetzt; andere warten auf ihre Richtung.
+      const nowList = all.filter((r) => !curMood || r.mood === curMood).sort(byLove);
+      const waitList = all.filter((r) => curMood && r.mood !== curMood).sort(byLove);
+
+      $("wl-count").textContent = nowList.length;
       const wl = $("wishlist");
       wl.innerHTML = "";
-      if (!active.length) wl.append(el("div", { class: "empty" }, "Noch leer. Sei die erste Person mit einem Wunsch."));
-      for (const r of active) {
-        const mine = r.byId === gid;
-        const voted = mine || r.voterIds.includes(gid);
-        const playing = data.nowPlaying?.id === r.id;
-        const badge = playing
-          ? el("span", { class: "badge", style: "background:var(--gold)" }, "läuft")
-          : r.status === "queued"
-          ? el("span", { class: "badge", style: `background:${MOODS[r.mood].color}` }, "in Queue")
-          : el("span", { class: "badge", style: "background:var(--border);color:var(--dim)" }, "wartet");
-        wl.append(el("div", { class: "row" },
-          el("div", { style: "min-width:0;flex:1" },
-            el("div", { style: "display:flex;align-items:center;gap:8px" },
-              el("span", { class: "truncate", style: "font-weight:600" }, r.title), badge),
-            el("div", { class: "truncate muted", style: "font-size:12.5px" }, `${r.artist} · ${MOODS[r.mood].emoji} ${r.mood}`),
-            el("div", { class: "truncate", style: "font-size:12px;color:var(--gold);margin-top:2px" }, `von ${mine ? "dir" : r.addedBy}`)),
-          el("button", { class: "pill", style: voted ? `color:${MOODS[r.mood].color};border-color:${MOODS[r.mood].color}66` : "", disabled: voted ? "" : null, onclick: voted ? null : () => vote(r.id) }, `♥ ${r.weight}`)));
-      }
+      if (!all.length) wl.append(el("div", { class: "empty" }, "Noch leer. Sei die erste Person mit einem Wunsch."));
+      else if (!nowList.length) wl.append(el("div", { class: "empty" }, "Für die aktuelle Richtung noch kein Wunsch."));
+      for (const r of nowList) wl.append(wishRow(r, data.nowPlaying));
+
+      $("ww-count").textContent = waitList.length;
+      $("waitsec").style.display = waitList.length ? "" : "none";
+      const ww = $("waitlist");
+      ww.innerHTML = "";
+      for (const r of waitList) ww.append(wishRow(r, data.nowPlaying));
     }
 
     refresh();
