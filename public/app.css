@@ -59,8 +59,9 @@ input::placeholder{ color:var(--dim); opacity:.75; }
 .pill{ flex-shrink:0; background:transparent; border:1px solid var(--border); border-radius:999px; padding:6px 11px; font-size:13px; font-weight:600; color:var(--dim); cursor:pointer; }
 .badge{ font-size:10.5px; font-weight:700; color:#3a2f1c; padding:2px 8px; border-radius:999px; text-transform:uppercase; letter-spacing:.4px; flex-shrink:0; }
 
-.current-dir{ border:1px solid var(--border); border-radius:20px; padding:26px 20px; margin-bottom:14px; background:linear-gradient(160% 150% at 12% 0%, #FBF8F1 0%, var(--surface) 60%, var(--surface2) 100%); box-shadow:0 6px 24px -18px #6b5a34; }
-.current-dir-name{ font-family:var(--display); font-size:46px; font-weight:600; display:flex; align-items:center; gap:14px; line-height:1.1; }
+.current-dir{ border:1px solid var(--border); border-radius:20px; padding:26px 20px; margin-bottom:14px; background:linear-gradient(160% 150% at 12% 0%, #FBF8F1 0%, var(--surface) 60%, var(--surface2) 100%); box-shadow:0 6px 24px -18px #6b5a34; overflow:hidden; }
+.current-dir-name{ font-family:var(--display); font-size:clamp(24px, 8vw, 46px); font-weight:600; display:flex; align-items:center; gap:10px; line-height:1.15; flex-wrap:wrap; max-width:100%; }
+.current-dir-name span:last-child{ min-width:0; overflow-wrap:break-word; }
 .vibe{ border:1px solid var(--border); border-radius:20px; padding:16px 18px; background:linear-gradient(160% 150% at 12% 0%, #FBF8F1 0%, var(--surface) 60%, var(--surface2) 100%); box-shadow:0 6px 24px -18px #6b5a34; }
 .vibe .dom{ font-family:var(--display); font-size:22px; font-weight:600; display:flex; align-items:center; gap:9px; margin:4px 0 12px; }
 .vibe.big .dom{ font-size:26px; }
