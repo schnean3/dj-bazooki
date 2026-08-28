@@ -25,7 +25,8 @@ const {
   PORT = 8888,
   MARKET = "CH",
   // Playlist, aus der der Auto-Fill-Pool gebaut wird. Muss oeffentlich lesbar sein,
-  // dann reicht der App-Token. Leer lassen => Fallback auf MOOD_POOL weiter unten.
+  // dann reicht der App-Token. Leer lassen => Auto-Fill-Pool bleibt leer (kein
+  // Fallback mehr auf MOOD_POOL).
   SPOTIFY_PLAYLIST_ID = "7n18x8ELn4t0tKS1cbiksl",
   // Horn/Tröte: URI des Effekts (Episode ODER Track) + Intervall in Minuten.
   HORN_URI = "spotify:episode:7i8ANZDp3UtjiGPJoKXP5f",
@@ -1068,7 +1069,13 @@ app.get("/api/pool", (req, res) => {
 app.post("/api/pool/reload", djOnly, async (_req, res) => {
   moodCache.clear();
   await loadPool(true);
-  res.json({ ok: !poolMeta.error, total: poolMeta.total, error: poolMeta.error });
+  res.json({
+    ok: !poolMeta.error,
+    total: poolMeta.total,
+    dropped: poolMeta.dropped,
+    error: poolMeta.error,
+    byMood: Object.fromEntries(MOOD_NAMES.map((m) => [m, (poolByMood[m] || []).length])),
+  });
 });
 
 /* ----------------------------- Auto-Fill nach Stimmung ----------------------------- */
@@ -1091,9 +1098,10 @@ async function resolveTrack(query) {
 }
 
 /* ------------------------- Pool aus der Spotify-Playlist ------------------------- */
-// Die Playlist ist die Quelle der Wahrheit fuer den Auto-Fill. Sie wird einmal
-// eingelesen, jeder Track klassifiziert und nach Richtung einsortiert. MOOD_POOL
-// bleibt als Fallback bestehen, falls eine Richtung in der Playlist (noch) leer ist.
+// Die Playlist ist die EINZIGE Quelle fuer den Auto-Fill (kein MOOD_POOL-Fallback
+// mehr). Sie wird einmal eingelesen, jeder Track klassifiziert und nach Richtung
+// einsortiert. Deckt die Playlist eine Richtung (noch) nicht ab, bleibt der Pool
+// dort leer -- siehe GET /api/pool fuer die aktuelle Verteilung.
 const PLAYLIST_REFRESH_MS = 10 * 60000;
 let poolByMood = {};
 let poolMeta = { ts: 0, total: 0, dropped: 0, error: null, loading: false };
@@ -1204,17 +1212,10 @@ async function autoFillMaybe() {
     need--; added = true;
   };
 
-  // 1. Wahl: Songs aus der Playlist.
+  // Nur Songs aus der Playlist. Kein Fallback mehr auf die kuratierte MOOD_POOL-Liste --
+  // deckt die Playlist eine Richtung (noch) nicht, bleibt der Pool fuer diese Richtung leer.
   for (const t of shuffle(poolByMood[mood] || [])) {
     if (need <= 0) break;
-    if (!t || usedUris.has(t.uri)) continue;
-    add(t);
-  }
-
-  // 2. Wahl: kuratierte Fallback-Liste, solange die Playlist diese Richtung nicht deckt.
-  for (const q of shuffle(MOOD_POOL[mood] || [])) {
-    if (need <= 0) break;
-    const t = await resolveTrack(q);
     if (!t || usedUris.has(t.uri)) continue;
     add(t);
   }
