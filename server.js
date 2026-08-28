@@ -717,7 +717,7 @@ app.get("/api/search", async (req, res) => {
       uri: t.uri,
       title: t.name,
       artist: t.artists.map((a) => a.name).join(", "),
-      image: t.album?.images?.slice(-1)[0]?.url || null,
+      image: t.album?.images?.[0]?.url || null,
     }));
     res.json({ tracks });
   } catch (e) {
@@ -1152,7 +1152,7 @@ async function resolveTrack(query) {
       { headers: { Authorization: "Bearer " + token } });
     const d = await r.json();
     const t = d.tracks?.items?.[0];
-    if (t) val = { uri: t.uri, trackId: t.id, title: t.name, artist: t.artists.map((a) => a.name).join(", "), image: t.album?.images?.slice(-1)[0]?.url || null };
+    if (t) val = { uri: t.uri, trackId: t.id, title: t.name, artist: t.artists.map((a) => a.name).join(", "), image: t.album?.images?.[0]?.url || null };
   } catch {}
   poolCache.set(query, val);
   return val;
@@ -1190,7 +1190,7 @@ async function fetchPlaylistTracks() {
         artist: (t.artists || []).map((a) => a.name).join(", "),
         artistIds: (t.artists || []).map((a) => a.id).filter(Boolean),
         year: rd ? parseInt(String(rd).slice(0, 4), 10) || null : null,
-        image: t.album?.images?.slice(-1)[0]?.url || null,
+        image: t.album?.images?.[0]?.url || null,
       });
     }
     url = d.next;
