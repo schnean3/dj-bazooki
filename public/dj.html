@@ -160,6 +160,29 @@
         onclick: async () => { await api("/api/vote/toggle", { method: "POST", body: JSON.stringify({ on: !onVote }) }); refresh(); } },
         (onVote ? "● " : "○ ") + "Voting " + (onVote ? "an" : "aus"));
 
+      const poolReloadBtn = el("button", { class: "btn ghost", style: "font-size:12px;padding:6px 12px",
+        onclick: async (ev) => {
+          const btn = ev.currentTarget;
+          if (btn.disabled) return;
+          btn.disabled = true;
+          const original = btn.textContent;
+          btn.textContent = "⟳ Lädt…";
+          try {
+            const { data: r } = await api("/api/pool/reload", { method: "POST" });
+            if (r.error) {
+              toast("Pool laden fehlgeschlagen: " + r.error);
+            } else {
+              const parts = Object.keys(MOODS).map((m) => `${MOODS[m].emoji}${r.byMood?.[m] ?? 0}`).join(" ");
+              toast(`Pool geladen: ${r.total} Songs — ${parts}`);
+            }
+          } catch (err) {
+            toast("Pool laden fehlgeschlagen: " + (err?.message || err));
+          } finally {
+            btn.disabled = false;
+            btn.textContent = original;
+          }
+        } }, "⟳ Pool neu laden");
+
       let info;
       if (pb.duration > 0) {
         const remaining = pb.duration - pb.progress;
@@ -170,7 +193,7 @@
         info = el("span", { class: "muted", style: "font-size:12.5px" }, "Spotify inaktiv — starte einen Song mit ▶");
       }
 
-      bar.append(el("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" }, toggle, fillToggle, approveToggle, hornToggle, voteToggle));
+      bar.append(el("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" }, toggle, fillToggle, approveToggle, hornToggle, voteToggle, poolReloadBtn));
       bar.append(el("div", { style: "margin-top:6px" }, info));
 
       const v = data.vote;
