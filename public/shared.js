@@ -83,8 +83,10 @@ export function renderVibe(container, vibe, big) {
 export function renderNow(container, np) {
   container.innerHTML = "";
   container.className = "row now";
-  const art = el("div", { class: "art" }, np ? MOODS[np.mood]?.emoji || "🎵" : "🎧");
-  if (np?.mood) art.style.background = MOODS[np.mood].color + "22";
+  const art = np?.image
+    ? el("div", { class: "art has-image", style: `background-image:url('${np.image}')` })
+    : el("div", { class: "art" }, np ? MOODS[np.mood]?.emoji || "🎵" : "🎧");
+  if (np?.mood && !np?.image) art.style.background = MOODS[np.mood].color + "22";
   container.append(art,
     el("div", { style: "min-width:0" },
       el("div", { class: "eyebrow", style: "color:var(--gold);margin-bottom:3px" }, "Läuft gerade"),
