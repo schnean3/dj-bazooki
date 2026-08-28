@@ -420,7 +420,7 @@ let dj = { access: null, refresh: null, expires: 0, scope: "" };
 let appToken = { value: null, expires: 0 }; // Client-Credentials fuer Gaeste-Suche
 
 // Auto-Advance: beobachtet den laufenden Song und schiebt den naechsten nach.
-const AUTO_THRESHOLD_MS = 30000; // so viel vor Songende wird nachgeschoben
+const AUTO_THRESHOLD_MS = 40000; // so viel vor Songende wird nachgeschoben
 let auto = { pushedForUri: null, slot: 0 };
 let playback = { is_playing: false, uri: null, title: null, artist: null, progress: 0, duration: 0, ts: 0 };
 
