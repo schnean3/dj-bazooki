@@ -416,7 +416,7 @@ function persist() {
 }
 
 // DJ-Tokens (nur ein DJ, im Speicher). Beim Neustart neu einloggen.
-let dj = { access: null, refresh: null, expires: 0 };
+let dj = { access: null, refresh: null, expires: 0, scope: "" };
 let appToken = { value: null, expires: 0 }; // Client-Credentials fuer Gaeste-Suche
 
 // Auto-Advance: beobachtet den laufenden Song und schiebt den naechsten nach.
@@ -686,7 +686,7 @@ app.get("/callback", async (req, res) => {
     });
     const data = await r.json();
     if (!r.ok) return res.status(400).send("Token-Fehler: " + JSON.stringify(data));
-    dj = { access: data.access_token, refresh: data.refresh_token, expires: Date.now() + data.expires_in * 1000 };
+    dj = { access: data.access_token, refresh: data.refresh_token, expires: Date.now() + data.expires_in * 1000, scope: data.scope || "" };
     // Pool nutzt den DJ-Token (siehe fetchPlaylistTracks) - nach jedem Login neu
     // laden, statt auf den naechsten 10-Min-Refresh zu warten. Nicht blockierend.
     loadPool(true).catch(() => {});
@@ -696,8 +696,8 @@ app.get("/callback", async (req, res) => {
   }
 });
 
-app.get("/api/auth-status", (_req, res) => res.json({ loggedIn: !!dj.access }));
-app.post("/api/logout", (_req, res) => { dj = { access: null, refresh: null, expires: 0 }; res.json({ ok: true }); });
+app.get("/api/auth-status", (_req, res) => res.json({ loggedIn: !!dj.access, scope: dj.scope || "", poolError: poolMeta.error || null }));
+app.post("/api/logout", (_req, res) => { dj = { access: null, refresh: null, expires: 0, scope: "" }; res.json({ ok: true }); });
 
 /* ---- Katalog-Suche (Gaeste, via App-Token) ---- */
 app.get("/api/search", async (req, res) => {
