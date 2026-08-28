@@ -52,6 +52,28 @@ export function el(tag, attrs = {}, ...kids) {
   return n;
 }
 
+// Grosse Kopfzeile: die Richtung, die JETZT tatsächlich läuft (state.committedDirection).
+// Das ist bewusst getrennt von renderVibe() darunter, das nur die Abstimmung zeigt -
+// die fuehrende Abstimmung ist nicht zwingend schon die laufende Richtung (Haltesperre/Marge).
+export function renderCurrentDirection(container, committedDirection) {
+  container.className = "current-dir";
+  container.innerHTML = "";
+  const mood = committedDirection?.mood || null;
+  const m = mood ? MOODS[mood] : null;
+  container.style.boxShadow = m ? `0 0 60px -20px ${m.color}` : "none";
+
+  const eq = el("div", { class: "eq" });
+  if (m) for (let i = 0; i < 5; i++) eq.append(el("i", { style: `background:${m.color};animation-delay:${i * 130}ms` }));
+
+  container.append(
+    el("div", { style: "display:flex;align-items:center;gap:12px;margin-bottom:6px" },
+      el("span", { class: "eyebrow muted" }, "Läuft gerade"), m ? eq : null),
+    m
+      ? el("div", { class: "current-dir-name" }, el("span", {}, m.emoji), el("span", { style: `color:${m.color}` }, mood))
+      : el("div", { class: "muted", style: "margin:10px 0 4px;font-size:16px" }, "Richtung wird noch bestimmt…")
+  );
+}
+
 export function renderVibe(container, vibe, big) {
   container.className = "vibe" + (big ? " big" : "");
   container.innerHTML = "";

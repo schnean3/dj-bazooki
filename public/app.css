@@ -59,9 +59,11 @@ input::placeholder{ color:var(--dim); opacity:.75; }
 .pill{ flex-shrink:0; background:transparent; border:1px solid var(--border); border-radius:999px; padding:6px 11px; font-size:13px; font-weight:600; color:var(--dim); cursor:pointer; }
 .badge{ font-size:10.5px; font-weight:700; color:#3a2f1c; padding:2px 8px; border-radius:999px; text-transform:uppercase; letter-spacing:.4px; flex-shrink:0; }
 
-.vibe{ border:1px solid var(--border); border-radius:20px; padding:22px 20px; background:linear-gradient(160% 150% at 12% 0%, #FBF8F1 0%, var(--surface) 60%, var(--surface2) 100%); box-shadow:0 6px 24px -18px #6b5a34; }
-.vibe .dom{ font-family:var(--display); font-size:36px; font-weight:600; display:flex; align-items:center; gap:12px; margin:6px 0 16px; }
-.vibe.big .dom{ font-size:44px; }
+.current-dir{ border:1px solid var(--border); border-radius:20px; padding:26px 20px; margin-bottom:14px; background:linear-gradient(160% 150% at 12% 0%, #FBF8F1 0%, var(--surface) 60%, var(--surface2) 100%); box-shadow:0 6px 24px -18px #6b5a34; }
+.current-dir-name{ font-family:var(--display); font-size:46px; font-weight:600; display:flex; align-items:center; gap:14px; line-height:1.1; }
+.vibe{ border:1px solid var(--border); border-radius:20px; padding:16px 18px; background:linear-gradient(160% 150% at 12% 0%, #FBF8F1 0%, var(--surface) 60%, var(--surface2) 100%); box-shadow:0 6px 24px -18px #6b5a34; }
+.vibe .dom{ font-family:var(--display); font-size:22px; font-weight:600; display:flex; align-items:center; gap:9px; margin:4px 0 12px; }
+.vibe.big .dom{ font-size:26px; }
 .bar-row{ display:flex; align-items:center; gap:10px; margin-bottom:9px; }
 .bar-label{ width:118px; flex-shrink:0; font-size:13px; color:var(--dim); }
 .bar-track{ flex:1; height:9px; background:#0000000f; border-radius:6px; overflow:hidden; }

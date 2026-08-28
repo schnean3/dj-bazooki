@@ -27,6 +27,7 @@
       <div class="toolname">Musikwünsche mit <b>DJ BazooKI</b></div>
     </div>
 
+    <div id="current-dir"></div>
     <div id="vibe" class="vibe"></div>
     <div id="switch"></div>
     <div id="now" class="row now" style="margin-top:16px"></div>
@@ -61,7 +62,7 @@
   <div id="modal-root"></div>
 
   <script type="module">
-    import { MOODS, guestId, guestName, setGuestName, api, el, renderVibe, renderNow, renderSwitchHint, toast } from "/shared.js";
+    import { MOODS, guestId, guestName, setGuestName, api, el, renderVibe, renderNow, renderSwitchHint, renderCurrentDirection, toast } from "/shared.js";
 
     const gid = guestId();
     if (!guestName()) {
@@ -235,6 +236,7 @@
     async function refresh() {
       const { data } = await api("/api/state?guestId=" + encodeURIComponent(gid));
       renderVoteModal(data.vote);
+      renderCurrentDirection($("current-dir"), data.committedDirection);
       renderVibe($("vibe"), data.vibe, false);
       renderSwitchHint($("switch"), data.directionSwitch, data.vibe, "guest");
       renderNow($("now"), data.nowPlaying);
