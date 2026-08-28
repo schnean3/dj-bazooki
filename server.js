@@ -864,6 +864,24 @@ app.post("/api/vote/cast", (req, res) => {
   res.json({ ok: true });
 });
 
+// Live-Verteilung der Stimmen waehrend ein Voting laeuft - bewusst NICHT Teil von
+// /api/state, damit Gaeste (guest.html) weiterhin blind abstimmen und sich nicht am
+// Zwischenstand orientieren. Wird ausschliesslich von display.html gepollt.
+app.get("/api/vote/live", (_req, res) => {
+  const v = state.vote;
+  if (!v) return res.json({ active: false });
+  const counts = v.names.map((_, i) => Object.values(v.votes).filter((c) => c === i).length);
+  res.json({
+    active: !v.closed,
+    names: v.names,
+    counts,
+    total: Object.keys(v.votes).length,
+    closed: v.closed,
+    winnerName: v.closed ? v.winnerName : null,
+    closesAt: v.closesAt,
+  });
+});
+
 // Zeigt, welche Gaeste-Songs sich nicht auf Spotify finden liessen (guests.csv pruefen).
 app.get("/api/vote/unresolved", djOnly, async (_req, res) => {
   await loadGuests();
