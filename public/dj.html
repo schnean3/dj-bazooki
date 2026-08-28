@@ -159,7 +159,7 @@
       var onVote = !!data.voteEnabled;
       const voteToggle = el("button", { class: onVote ? "btn gold" : "btn ghost", style: "font-size:12px;padding:6px 12px",
         onclick: async () => { await api("/api/vote/toggle", { method: "POST", body: JSON.stringify({ on: !onVote }) }); refresh(); } },
-        (onVote ? "● " : "○ ") + "Voting " + (onVote ? "an" : "aus"));
+        (onVote ? "● " : "○ ") + "Voting " + (onVote ? "an" : "aus") + (onVote && data.voteInMs != null ? " (" + mmss(data.voteInMs) + ")" : ""));
 
       const poolReloadBtn = el("button", { class: "btn ghost", style: "font-size:12px;padding:6px 12px",
         onclick: async (ev) => {

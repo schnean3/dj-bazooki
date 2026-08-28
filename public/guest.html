@@ -31,6 +31,7 @@
     <div id="vibe" class="vibe"></div>
     <div id="switch"></div>
     <div id="now" class="row now" style="margin-top:16px"></div>
+    <div id="vote-timer" class="muted" style="font-size:12px;text-align:center;margin-top:6px"></div>
 
     <section style="margin-top:20px">
       <div class="section-head">Wähl eine Richtung</div>
@@ -62,7 +63,7 @@
   <div id="modal-root"></div>
 
   <script type="module">
-    import { MOODS, guestId, guestName, setGuestName, api, el, renderVibe, renderNow, renderSwitchHint, renderCurrentDirection, toast } from "/shared.js";
+    import { MOODS, guestId, guestName, setGuestName, api, el, renderVibe, renderNow, renderSwitchHint, renderCurrentDirection, toast, fmtClock } from "/shared.js";
 
     const gid = guestId();
     if (!guestName()) {
@@ -232,6 +233,12 @@
         el("button", { class: "pill", style: voted ? `color:${MOODS[r.mood].color};border-color:${MOODS[r.mood].color}66` : "", disabled: voted ? "" : null, onclick: voted ? null : () => vote(r.id) }, `♥ ${r.weight}`));
     }
 
+    function renderVoteTimer(container, voteEnabled, voteInMs) {
+      container.textContent = voteEnabled && voteInMs != null
+        ? "Nächstes Voting in " + fmtClock(voteInMs)
+        : "";
+    }
+
     // --- Polling / Render ---
     async function refresh() {
       const { data } = await api("/api/state?guestId=" + encodeURIComponent(gid));
@@ -240,6 +247,7 @@
       renderVibe($("vibe"), data.vibe, false);
       renderSwitchHint($("switch"), data.directionSwitch, data.vibe, "guest");
       renderNow($("now"), data.nowPlaying);
+      renderVoteTimer($("vote-timer"), data.voteEnabled, data.voteInMs);
       renderDirections(data.directions);
 
       const all = data.requests.filter((r) => r.status !== "played");
