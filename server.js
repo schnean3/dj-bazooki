@@ -740,6 +740,24 @@ function voteForClient(guestId) {
   };
 }
 
+// Noch nicht gespielte Pool-Songs der aktuellen Richtung, die noch KEIN echter
+// Wunsch sind (weder Wunsch, Auto-Fill noch bereits gespielt). Werden als
+// 0-Herzen-Zeilen an die Wunschliste angehaengt, damit Gaeste den ganzen Pool
+// der laufenden Richtung sehen und per Herz "nach vorne holen" koennen
+// (siehe POST /api/requests/:id/vote, Zweig "pool:").
+function poolExtrasForCurrentMood() {
+  const mood = state.committedDirection?.mood;
+  if (!mood || !poolByMood[mood]) return [];
+  const activeUris = new Set(state.requests.map((r) => r.uri));
+  return poolByMood[mood]
+    .filter((t) => !activeUris.has(t.uri))
+    .map((t) => ({
+      id: "pool:" + t.trackId, uri: t.uri, trackId: t.trackId, title: t.title, artist: t.artist,
+      image: t.image || null, mood, status: "pool", voterIds: [], addedBy: null, byId: null,
+      pool: true, ts: 0, weight: 0,
+    }));
+}
+
 /* ---- State (Gaeste + DJ pollen das) ---- */
 app.get("/api/state", (req, res) => {
   res.json({
@@ -757,7 +775,10 @@ app.get("/api/state", (req, res) => {
     committedDirection: state.committedDirection || null,
     directionSwitch: directionSwitchInfo(),
     directions: state.directions || [],
-    requests: state.requests.map((r) => ({ ...r, weight: 1 + (r.voterIds?.length || 0) })),
+    requests: [
+      ...state.requests.map((r) => ({ ...r, weight: 1 + (r.voterIds?.length || 0) })),
+      ...poolExtrasForCurrentMood(),
+    ],
   });
 });
 
@@ -885,8 +906,45 @@ app.post("/api/requests", async (req, res) => {
 });
 
 app.post("/api/requests/:id/vote", (req, res) => {
-  const { guestId } = req.body || {};
-  const r = state.requests.find((x) => x.id === req.params.id);
+  const { guestId, name } = req.body || {};
+  const id = req.params.id;
+
+  // Herz auf einem 0-Herzen-Pool-Song: macht daraus einen echten, sofort
+  // gequeueten Wunsch (Baseline-Gewicht 1, wie jeder normale Wunsch — das
+  // erste Herz ist also gleich der erste Punkt, nicht der zweite). Zaehlt
+  // gegen Stunden-Limit und Song-Cooldown wie ein normaler Wunsch.
+  if (id.startsWith("pool:")) {
+    if (!guestId) return res.status(400).json({ error: "guestId fehlt" });
+    const trackId = id.slice(5);
+    const mood = state.committedDirection?.mood;
+    const t = mood && (poolByMood[mood] || []).find((x) => x.trackId === trackId);
+    if (!t) return res.status(404).json({ error: "not_found" });
+    if (state.requests.some((r) => r.uri === t.uri && r.status !== "played"))
+      return res.status(409).json({ error: "schon auf der Wunschliste" });
+    const lastSameUri = state.requests
+      .filter((r) => r.uri === t.uri)
+      .reduce((m, r) => Math.max(m, r.ts || 0), 0);
+    const now = Date.now();
+    if (lastSameUri && now - lastSameUri < HOUR) {
+      const nextMin = Math.max(1, Math.ceil((lastSameUri + HOUR - now) / 60000));
+      return res.status(429).json({ error: "song_cooldown", nextMin });
+    }
+    const times = myTimes(guestId, now);
+    if (times.length >= LIMIT) {
+      const nextMin = Math.max(1, Math.ceil((times[0] + HOUR - now) / 60000));
+      return res.status(429).json({ error: "limit", nextMin });
+    }
+    state.requests.push({
+      id: uid(), uri: t.uri, trackId: t.trackId, title: t.title, artist: t.artist,
+      image: t.image || null, mood, status: "queued", order: nextOrder(), voterIds: [],
+      addedBy: (name || "Gast").slice(0, 24), byId: guestId, ts: now,
+    });
+    state.log.push({ byId: guestId, ts: now });
+    persist();
+    return res.json({ ok: true, promoted: true });
+  }
+
+  const r = state.requests.find((x) => x.id === id);
   if (!r) return res.status(404).json({ error: "not_found" });
   if (guestId && r.byId !== guestId && !r.voterIds.includes(guestId)) {
     r.voterIds.push(guestId);
