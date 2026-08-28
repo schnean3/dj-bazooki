@@ -43,6 +43,8 @@ const SCOPES = [
   "user-read-playback-state",
   "user-modify-playback-state",
   "user-read-currently-playing",
+  "playlist-read-private",
+  "playlist-read-collaborative",
 ].join(" ");
 
 const HOUR = 3600000;
@@ -685,6 +687,9 @@ app.get("/callback", async (req, res) => {
     const data = await r.json();
     if (!r.ok) return res.status(400).send("Token-Fehler: " + JSON.stringify(data));
     dj = { access: data.access_token, refresh: data.refresh_token, expires: Date.now() + data.expires_in * 1000 };
+    // Pool nutzt den DJ-Token (siehe fetchPlaylistTracks) - nach jedem Login neu
+    // laden, statt auf den naechsten 10-Min-Refresh zu warten. Nicht blockierend.
+    loadPool(true).catch(() => {});
     res.redirect("/dj.html");
   } catch (e) {
     res.status(500).send("Login fehlgeschlagen: " + e.message);
@@ -1169,8 +1174,10 @@ async function fetchPlaylistTracks() {
   const out = [];
   let dropped = 0;
   while (url) {
-    const token = await getAppToken();
-    const r = await fetch(url, { headers: { Authorization: "Bearer " + token } });
+    // App-Token (client_credentials) wird von Spotify fuer fremde/kollaborative
+    // Playlists in Development Mode oft mit 403 abgewiesen. Der DJ-User-Token
+    // (bereits fuer Playback im Einsatz) funktioniert zuverlaessig.
+    const r = await djFetch(url.replace("https://api.spotify.com/v1", ""));
     if (!r.ok) throw new Error(`playlist ${r.status}: ${(await r.text()).slice(0, 160)}`);
     const d = await r.json();
     for (const it of d.items || []) {
