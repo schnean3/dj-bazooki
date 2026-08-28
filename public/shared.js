@@ -88,7 +88,7 @@ export function renderNow(container, np) {
     : el("div", { class: "art" }, np ? MOODS[np.mood]?.emoji || "🎵" : "🎧");
   if (np?.mood && !np?.image) art.style.background = MOODS[np.mood].color + "22";
   container.append(art,
-    el("div", { style: "min-width:0" },
+    el("div", { class: "now-info", style: "min-width:0" },
       el("div", { class: "eyebrow", style: "color:var(--gold);margin-bottom:3px" }, "Läuft gerade"),
       np ? el("div", { class: "truncate", style: "font-weight:600;font-size:16px" }, np.title) : el("div", { class: "muted", style: "font-size:15px" }, "Noch nichts ausgewählt"),
       np ? el("div", { class: "truncate muted", style: "font-size:13px" }, np.artist) : null));
