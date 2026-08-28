@@ -86,31 +86,16 @@
       const { data } = await api("/api/search?q=" + encodeURIComponent(q));
       box.innerHTML = "";
       for (const t of data.tracks || []) {
-        box.append(el("button", { class: "card", style: "cursor:pointer;text-align:left", onclick: () => openMood(t) },
+        box.append(el("button", { class: "card", style: "cursor:pointer;text-align:left", onclick: () => submit(t) },
           el("div", { class: "truncate", style: "font-weight:600" }, t.title),
           el("div", { class: "truncate muted", style: "font-size:12.5px" }, t.artist)));
       }
       if (!(data.tracks || []).length) box.append(el("div", { class: "empty" }, "Nichts gefunden. Anders schreiben?"));
     }
 
-    // --- Wunsch bestätigen (Richtung wird automatisch erkannt) ---
-    function openMood(track) {
+    // --- Wunsch direkt senden (Richtung wird automatisch erkannt) ---
+    async function submit(track) {
       pendingTrack = track;
-      const root = $("modal-root");
-      root.innerHTML = "";
-      root.append(el("div", { class: "overlay", onclick: (e) => { if (e.target.classList.contains("overlay")) root.innerHTML = ""; } },
-        el("div", { class: "modal" },
-          el("div", { class: "muted eyebrow" }, "Dein Wunsch"),
-          el("div", { style: "font-weight:600;font-size:17px;margin:4px 0 2px" }, track.title),
-          el("div", { class: "muted", style: "font-size:13px" }, track.artist),
-          el("div", { class: "muted", style: "margin-top:14px;font-size:12.5px" }, "Die passende Richtung erkennt DJ BazooKI automatisch."),
-          el("div", { class: "chips", style: "margin-top:14px" },
-            el("button", { class: "chip", onclick: () => { root.innerHTML = ""; } }, "Abbrechen"),
-            el("button", { class: "chip", style: "background:var(--gold);color:#3a2f1c;border-color:var(--gold)", onclick: () => submit() }, "🎶 Wünschen")))));
-    }
-
-    async function submit() {
-      $("modal-root").innerHTML = "";
       const { ok, status, data } = await api("/api/requests", {
         method: "POST",
         body: JSON.stringify({ guestId: gid, name: guestName(), track: pendingTrack }),
