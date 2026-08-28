@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DJ BazooKI — Übersicht</title>
+<link rel="stylesheet" href="/app.css" />
+<script src="/qrcode-lib.js"></script>
+<style>
+  /* Grossbildschirm-Ansicht: eigenes Layout, nutzt aber die Farben/Fonts/Komponenten
+     aus app.css (current-dir, vibe, bar-*, eq, switch-hint, row/now, badge ...) unveraendert -
+     hier nur Groessen & Anordnung fuer einen Laptop-/TV-Screen im Querformat. */
+  html, body{ height:100%; }
+  body{ overflow-x:hidden; }
+  .stage{ max-width:1560px; margin:0 auto; padding:22px 34px 30px; min-height:100vh; }
+
+  .topbar{ display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:20px; }
+  .topbar .crest{ text-align:left; margin:0; display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  .topbar .couple{ font-size:clamp(26px, 3vw, 38px); margin:0; }
+  .topbar .date{ margin:0; }
+  .topbar .toolname{ margin:0; }
+  .clock{ font-family:var(--display); font-size:20px; color:var(--dim); letter-spacing:1px; white-space:nowrap; }
+
+  .qrcard{ display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:9px 16px 9px 9px; box-shadow:0 6px 20px -16px #6b5a34; flex-shrink:0; }
+  .qrcard .qrbox{ width:72px; height:72px; background:#fff; border-radius:8px; padding:4px; flex-shrink:0; }
+  .qrcard .qrbox svg{ display:block; width:100%; height:100%; }
+  .qrcard .txt{ font-family:var(--display); font-size:15px; line-height:1.3; color:var(--ink); }
+  .qrcard .txt b{ color:var(--gold); display:block; font-size:16px; }
+
+  .grid2{ display:grid; grid-template-columns:1.55fr 1fr; gap:22px; align-items:start; }
+  @media (max-width:980px){ .grid2{ grid-template-columns:1fr; } .stage{ padding:18px 16px 24px; } .topbar{ flex-direction:column; align-items:flex-start; } }
+
+  /* ---- Now playing hero ---- */
+  .hero-now{ background:linear-gradient(160% 150% at 12% 0%, #FBF8F1 0%, var(--surface) 55%, var(--surface2) 100%);
+    border:1px solid var(--border); border-radius:24px; padding:26px; box-shadow:0 10px 34px -22px #6b5a34; }
+  .hero-now .flex{ display:flex; gap:26px; align-items:center; }
+  .hero-art{ width:clamp(140px,17vw,220px); height:clamp(140px,17vw,220px); border-radius:18px; flex-shrink:0;
+    display:grid; place-items:center; font-size:64px; background:var(--surface2); box-shadow:0 8px 26px -16px #6b5a34; }
+  .hero-art.has-image{ background-size:cover; background-position:center; }
+  .hero-title{ font-family:var(--display); font-weight:600; font-size:clamp(26px,3vw,44px); line-height:1.12; margin-bottom:4px; overflow-wrap:break-word; }
+  .hero-artist{ color:var(--dim); font-size:clamp(15px,1.5vw,20px); margin-bottom:10px; }
+  .hero-by{ color:var(--gold); font-family:var(--display); font-size:clamp(14px,1.3vw,18px); font-weight:600; }
+  .hero-hearts{ font-family:var(--display); font-size:clamp(15px,1.4vw,19px); color:var(--rose); margin-left:10px; white-space:nowrap; }
+  .hero-progress{ margin-top:18px; }
+  .hero-progress .track{ height:10px; }
+  .hero-times{ display:flex; justify-content:space-between; font-size:12.5px; color:var(--dim); margin-top:6px; font-variant-numeric:tabular-nums; }
+  .idle-hero{ text-align:center; padding:50px 10px 40px; }
+  .idle-hero .big{ font-family:var(--script); color:var(--gold); font-size:clamp(34px,5vw,56px); margin-bottom:6px; }
+  .idle-hero .sub{ color:var(--dim); font-size:15px; }
+
+  .current-dir{ margin-top:20px; margin-bottom:0; }
+  .stage .current-dir-name{ font-size:clamp(28px, 4vw, 52px); }
+  .stage #switch{ margin-top:14px; }
+  .stage .switch-hint .st-main{ font-size:16px; }
+
+  /* ---- Right column ---- */
+  .panel{ background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:18px 18px 16px; box-shadow:0 6px 22px -18px #6b5a34; margin-bottom:18px; }
+  .panel .head{ margin-bottom:12px; }
+  .panel .section-head{ font-size:19px; margin:0; }
+
+  .up-row{ display:flex; align-items:center; gap:12px; padding:9px 2px; border-bottom:1px solid var(--border); }
+  .up-row:last-child{ border-bottom:none; }
+  .up-rank{ font-family:var(--display); font-size:19px; color:var(--dim); width:20px; text-align:center; flex-shrink:0; }
+  .up-mood{ width:30px; text-align:center; flex-shrink:0; font-size:16px; }
+  .up-title{ font-weight:600; font-size:14.5px; }
+  .up-artist{ color:var(--dim); font-size:12px; }
+  .up-by{ color:var(--gold); font-size:11.5px; font-weight:600; }
+  .up-hearts{ font-size:12.5px; color:var(--rose); flex-shrink:0; white-space:nowrap; }
+
+  .chip-row{ display:flex; align-items:center; gap:10px; background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:11px 14px; font-size:14px; }
+  .chip-row b{ color:var(--gold); }
+
+  .vote-box{ text-align:center; }
+  .vote-names{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:10px 0 6px; }
+  .vote-pill{ background:var(--surface2); border:1px solid var(--border); border-radius:999px; padding:7px 15px; font-family:var(--display); font-weight:600; font-size:15px; }
+  .vote-timer{ color:var(--dim); font-size:12.5px; }
+  .vote-winner{ font-family:var(--script); color:var(--gold); font-size:clamp(30px,4vw,40px); margin:6px 0 2px; }
+
+  .mini-vibe .vibe{ border:none; box-shadow:none; padding:0; background:none; }
+  .mini-vibe .bar-label{ width:auto; flex:1; font-size:12px; }
+  .mini-vibe .bar-track{ flex:1.4; height:7px; }
+  .mini-vibe .dom{ font-size:16px; margin:2px 0 10px; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="topbar">
+      <div class="crest">
+        <div class="monogram">C&nbsp;+&nbsp;D</div>
+        <div class="couple">Caro &amp; Daniel</div>
+        <div class="date">5. September 2026</div>
+        <div class="toolname">Musik mit <b>DJ BazooKI</b></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px">
+        <div id="clock" class="clock"></div>
+        <div class="qrcard">
+          <div class="qrbox" id="qrbox"></div>
+          <div class="txt">Lied wünschen<b>Jetzt scannen</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div>
+        <div id="now-hero" class="hero-now"></div>
+        <div id="current-dir" class="current-dir"></div>
+        <div id="switch"></div>
+      </div>
+
+      <div>
+        <div class="panel">
+          <div class="head"><div class="section-head">Als Nächstes</div></div>
+          <div id="upnext"></div>
+        </div>
+
+        <div id="vote-panel" class="panel vote-box" style="display:none"></div>
+
+        <div id="horn-chip" class="chip-row" style="display:none;margin-bottom:18px"></div>
+
+        <div class="panel">
+          <div class="head"><div class="section-head" style="font-size:15px;color:var(--dim);font-family:var(--body);font-weight:600;text-transform:uppercase;letter-spacing:1px">Richtungswahl der Gäste</div></div>
+          <div class="mini-vibe"><div id="vibe"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script type="module">
+import { MOODS, api, el, renderCurrentDirection, renderVibe, renderSwitchHint, fmtClock, queueSort } from "/shared.js";
+
+const GUEST_URL = location.origin + "/guest.html";
+
+function drawQr() {
+  try {
+    const qr = qrcode(0, "M");
+    qr.addData(GUEST_URL);
+    qr.make();
+    const n = qr.getModuleCount();
+    let d = "";
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += "M" + c + " " + r + "h1v1h-1z";
+    document.getElementById("qrbox").innerHTML =
+      `<svg viewBox="-2 -2 ${n + 4} ${n + 4}" width="100%" height="100%" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">` +
+      `<rect x="-2" y="-2" width="${n + 4}" height="${n + 4}" fill="#ffffff"/><path d="${d}" fill="#2E2820"/></svg>`;
+  } catch (e) { /* Adresse ungueltig - QR bleibt leer, kein Fehler fuers Publikum sichtbar */ }
+}
+
+function tickClock() {
+  document.getElementById("clock").textContent =
+    new Date().toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
+}
+
+// Lokale Fortschritts-Interpolation zwischen den 3.5s-Polls, damit der Balken
+// auf dem grossen Screen nicht ruckelt.
+let lastPlayback = null;
+function renderProgress() {
+  const host = document.getElementById("prog");
+  if (!host || !lastPlayback || !lastPlayback.duration) return;
+  const elapsed = lastPlayback.is_playing
+    ? Math.min(lastPlayback.duration, lastPlayback.progress + (Date.now() - lastPlayback.ts))
+    : lastPlayback.progress;
+  const pct = Math.min(100, (elapsed / lastPlayback.duration) * 100);
+  const fill = host.querySelector(".bar-fill");
+  if (fill) fill.style.width = pct + "%";
+  const times = host.querySelector(".hero-times");
+  if (times) {
+    const mmss = (ms) => Math.floor(ms / 60000) + ":" + String(Math.floor((ms / 1000) % 60)).padStart(2, "0");
+    times.children[0].textContent = mmss(elapsed);
+    times.children[1].textContent = "-" + mmss(Math.max(0, lastPlayback.duration - elapsed));
+  }
+}
+
+function renderHero(np, playback, requests) {
+  const host = document.getElementById("now-hero");
+  if (!np) {
+    host.innerHTML = "";
+    host.append(el("div", { class: "idle-hero" },
+      el("div", { class: "big" }, "Bald geht's los ✨"),
+      el("div", { class: "sub" }, "Wünsche gleich hier scannen und mitgestalten.")));
+    lastPlayback = null;
+    return;
+  }
+  const req = requests.find((r) => r.id === np.id);
+  const hearts = req ? (req.weight ?? (1 + (req.voterIds?.length || 0))) : null;
+  const by = req?.addedBy;
+  const isAuto = by === "DJ BazooKI";
+  const art = np.image
+    ? el("div", { class: "hero-art has-image", style: `background-image:url('${np.image}')` })
+    : el("div", { class: "hero-art" }, np.mood ? MOODS[np.mood]?.emoji || "🎵" : "🎵");
+
+  host.innerHTML = "";
+  const info = el("div", { style: "min-width:0;flex:1" },
+    el("div", { class: "hero-title truncate" }, np.title),
+    el("div", { class: "hero-artist truncate" }, np.artist),
+    el("div", { style: "display:flex;align-items:center;flex-wrap:wrap" },
+      by ? el("span", { class: "hero-by" }, isAuto ? "🎧 DJ BazooKI Auswahl" : `♥ gewünscht von ${by}`) : null,
+      hearts ? el("span", { class: "hero-hearts" }, "♥ " + hearts) : null));
+  host.append(el("div", { class: "flex" }, art, info));
+
+  if (playback && playback.duration > 0) {
+    const prog = el("div", { id: "prog", class: "hero-progress" },
+      el("div", { class: "bar-track track" }, el("div", { class: "bar-fill", style: "background:var(--gold);width:0%" })),
+      el("div", { class: "hero-times" }, el("span", {}, "0:00"), el("span", {}, "0:00")));
+    host.append(prog);
+    lastPlayback = { ...playback };
+  } else {
+    lastPlayback = null;
+  }
+}
+
+function renderUpNext(requests, nowId) {
+  const host = document.getElementById("upnext");
+  host.innerHTML = "";
+  const queue = requests.filter((r) => r.status === "queued" && r.id !== nowId && !r.pool).sort(queueSort).slice(0, 5);
+  if (!queue.length) { host.append(el("div", { class: "empty" }, "Noch nichts in der Warteschlange.")); return; }
+  queue.forEach((r, i) => {
+    const m = MOODS[r.mood];
+    const hearts = r.weight ?? (1 + (r.voterIds?.length || 0));
+    host.append(el("div", { class: "up-row" },
+      el("div", { class: "up-rank" }, i + 1),
+      el("div", { class: "up-mood" }, m?.emoji || "🎵"),
+      el("div", { style: "min-width:0;flex:1" },
+        el("div", { class: "up-title truncate" }, r.title),
+        el("div", { class: "up-artist truncate" }, r.artist),
+        (r.addedBy && r.addedBy !== "DJ BazooKI" && r.addedBy !== "DJ") ? el("div", { class: "up-by truncate" }, "von " + r.addedBy) : null),
+      el("div", { class: "up-hearts" }, "♥ " + hearts)));
+  });
+}
+
+function renderHorn(data) {
+  const host = document.getElementById("horn-chip");
+  if (!data.hornEnabled || data.hornInMs == null) { host.style.display = "none"; return; }
+  host.style.display = "";
+  host.innerHTML = "";
+  host.append(el("span", { style: "font-size:20px" }, "🎺"), el("span", {}, "Nächstes Horn ", el("b", {}, fmtClock(data.hornInMs))));
+}
+
+function renderVote(data) {
+  const host = document.getElementById("vote-panel");
+  const v = data.vote;
+  if (!v) { host.style.display = "none"; return; }
+  host.style.display = "";
+  host.innerHTML = "";
+  if (v.closed) {
+    host.append(
+      el("div", { style: "font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:1.5px;font-weight:600" }, "Voting"),
+      el("div", { class: "vote-winner" }, v.winnerName ? v.winnerName : "—"),
+      el("div", { class: "vote-timer" }, v.winnerName ? "hat gewonnen 🎉" : "niemand hat abgestimmt"));
+  } else {
+    const closesTxt = v.closesAt != null ? "schliesst in " + fmtClock(v.closesAt - Date.now()) : "schliesst nach diesem Song";
+    host.append(
+      el("div", { style: "font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:1.5px;font-weight:600" }, "Voting läuft 📲"),
+      el("div", { class: "vote-names" }, v.names.map((n) => el("span", { class: "vote-pill" }, n))),
+      el("div", { class: "vote-timer" }, closesTxt));
+  }
+}
+
+async function refresh() {
+  const { data } = await api("/api/state");
+  renderHero(data.nowPlaying, data.playback, data.requests);
+  renderUpNext(data.requests, data.nowPlaying?.id);
+  renderHorn(data);
+  renderVote(data);
+  renderCurrentDirection(document.getElementById("current-dir"), data.committedDirection);
+  renderSwitchHint(document.getElementById("switch"), data.directionSwitch, data.vibe, "dj");
+  renderVibe(document.getElementById("vibe"), data.vibe, false);
+}
+
+drawQr();
+tickClock();
+setInterval(tickClock, 15000);
+refresh();
+setInterval(refresh, 3500);
+setInterval(renderProgress, 250);
+</script>
+</body>
+</html>
