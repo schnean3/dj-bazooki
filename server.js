@@ -54,7 +54,7 @@ const MOOD_NAMES = ["Party-Charts", "Latino", "Schlager", "Rock", "HipHop/Danceh
 // Richtungen, aus denen NICHT automatisch nachgeschoben wird. Slow/Love bleibt als
 // Gastwunsch erlaubt, wuerde als Auto-Fill aber die Tanzflaeche leerraeumen.
 const NO_AUTOFILL = new Set(["Slow/Love"]);
-const DIRECTION_WINDOW = 120 * 60000; // Richtungs-Stimmen zaehlen 2h, damit die Stimmung aktuell bleibt
+const DIRECTION_TTL_MS = 30 * 60000; // Richtungswahl eines Gasts verfaellt 30 Min nach seiner letzten Wahl (wird dann geloescht)
 const MIN_QUEUE = 2;                   // (Legacy) frueher: Nachschieb-Schwelle; jetzt via POOL_FLOOR
 
 // --- Autonomer DJ: Richtung stabil halten & Wunsch/Pool mischen ---
@@ -475,16 +475,27 @@ async function djFetch(path, opts = {}) {
   return res;
 }
 
+// Loescht Richtungswahlen, die seit DIRECTION_TTL_MS (30 Min) nicht erneuert wurden.
+// Wird ueberall aufgerufen, wo state.directions gelesen oder ausgeliefert wird, damit
+// abgelaufene Wahlen weder in die Vibe-Berechnung einfliessen noch im Frontend (guest.html,
+// renderDirections) als "noch aktiv" markiert bleiben.
+function pruneExpiredDirections() {
+  const now = Date.now();
+  const before = (state.directions || []).length;
+  state.directions = (state.directions || []).filter((d) => now - d.ts < DIRECTION_TTL_MS);
+  if (state.directions.length !== before) persist();
+}
+
 /* ----------------------------- Vibe-Berechnung ----------------------------- */
 function computeVibe() {
-  const now = Date.now();
+  pruneExpiredDirections();
   const tally = {};
   let total = 0;
   const bump = (mood, w) => { tally[mood] = (tally[mood] || 0) + w; total += w; };
   // Richtungswahl zaehlt NUR die explizite Richtungs-Selektion der Gaeste (state.directions).
   // Lieder-Wuensche fliessen bewusst NICHT ein - sonst wuerde ein einzelner populaerer Wunsch
   // die Richtung verschieben, ohne dass jemand diese Richtung tatsaechlich gewaehlt hat.
-  for (const d of state.directions || []) if (now - d.ts < DIRECTION_WINDOW) bump(d.mood, 1);
+  for (const d of state.directions || []) bump(d.mood, 1);
   const rows = Object.entries(tally)
     .map(([mood, weight]) => ({ mood, weight, pct: total ? weight / total : 0 }))
     .sort((a, b) => b.weight - a.weight);
@@ -779,6 +790,7 @@ function poolExtrasForCurrentMood() {
 
 /* ---- State (Gaeste + DJ pollen das) ---- */
 app.get("/api/state", (req, res) => {
+  pruneExpiredDirections();
   res.json({
     loggedIn: !!dj.access,
     nowPlaying: state.nowPlaying,
@@ -806,6 +818,7 @@ app.get("/api/state", (req, res) => {
 app.post("/api/direction", (req, res) => {
   const { guestId, mood } = req.body || {};
   if (!guestId) return res.status(400).json({ error: "guestId fehlt" });
+  pruneExpiredDirections();
   state.directions = (state.directions || []).filter((d) => d.byId !== guestId);
   if (mood && MOOD_NAMES.includes(mood)) state.directions.push({ byId: guestId, mood, ts: Date.now() });
   persist();
