@@ -42,6 +42,7 @@ body.mode-sheet .cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-w
 .qrbox{width:42mm;height:42mm;margin:0 auto;background:#fff;border-radius:8px;padding:2.5mm;border:1px solid var(--border)}
 .qrbox svg{display:block}
 .card .steps{font-size:11px;color:var(--dim);line-height:1.5;margin:3mm auto 0;max-width:70mm}
+.card .spruch{font-family:var(--display);font-style:italic;font-weight:500;font-size:12.5px;color:var(--gold);margin:2.5mm auto 0;max-width:66mm}
 .card .foot{font-family:var(--display);letter-spacing:1px;font-size:12px;margin-top:3mm;color:var(--ink)}
 .card .foot b{font-weight:600}
 .card .url{font-size:9px;color:var(--dim);margin-top:1.5mm;word-break:break-all;opacity:.8}
@@ -64,7 +65,7 @@ body.mode-sheet .cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-w
     <p>Gib die Adresse ein, unter der die Gäste die Wunsch-Seite öffnen. Der QR-Code wird daraus erzeugt. Dann drucken und auf die Tische stellen.</p>
     <div class="field">
       <label>Adresse der Gästeseite</label>
-      <input id="url" value="http://127.0.0.1:8888/guest.html" />
+      <input id="url" value="https://dj-bazooki.onrender.com/guest.html" />
       <p class="hint">Am besten eine feste Web-Adresse (nach dem Deployment), z. B. <b>https://musik.caro-und-daniel.ch/guest.html</b>. Läuft die App nur lokal auf dem DJ-Laptop, nimm dessen WLAN-IP wie <b>http://192.168.1.42:8888/guest.html</b> — dann müssen alle Gäste im selben WLAN sein.</p>
     </div>
     <div class="bar">
@@ -2419,16 +2420,16 @@ var qrcode = function() {
       '<div class="couple">Caro &amp; Daniel</div>'+
       '<div class="date">5. September 2026</div>'+
       SPRIG+
-      '<h2>Wünscht euch Musik</h2>'+
-      '<div class="lead">Ihr entscheidet mit, was auf der Tanzfläche läuft.</div>'+
+      '<h2>DJ BazooKI</h2>'+
+      '<div class="lead">Er legt auf, ihr gebt den Takt vor: DJ BazooKI tanzt mit euch durch den Abend.</div>'+
       '<div class="qrbox">'+qr+'</div>'+
       '<div class="steps">Kamera öffnen · Code scannen · Lied wünschen &amp; Herzen geben</div>'+
-      '<div class="foot">Musikwünsche mit <b>DJ BazooKI</b></div>'+
+      '<div class="spruch">Wer nicht mitwünscht, tanzt zur Überraschung.</div>'+
       '<div class="url">'+url+'</div></div>';
   }
 
   function render(){
-    var url = document.getElementById("url").value.trim() || "http://127.0.0.1:8888/guest.html";
+    var url = document.getElementById("url").value.trim() || "https://dj-bazooki.onrender.com/guest.html";
     var qr;
     try { qr = qrSvg(url); }
     catch(e){ qr = '<div style="font-size:11px;color:#b5726a;padding:10px">Adresse zu lang oder ungültig.</div>'; }
