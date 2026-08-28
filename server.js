@@ -788,6 +788,7 @@ app.get("/api/state", (req, res) => {
     hornEnabled: !!state.hornEnabled,
     hornInMs: state.hornEnabled ? Math.max(0, HORN_INTERVAL_MS - (Date.now() - horn.lastTs)) : null,
     voteEnabled: !!state.voteEnabled,
+    voteInMs: (state.voteEnabled && !state.vote) ? Math.max(0, state.nextVoteAt - Date.now()) : null,
     vote: voteForClient(req.query.guestId),
     playback,
     vibe: computeVibe(),
