@@ -47,7 +47,7 @@ const SCOPES = [
 
 const HOUR = 3600000;
 const LIMIT = 10; // Wuensche pro Gast und Stunde
-const MOOD_NAMES = ["Party-Charts", "Latino", "Dancehall/Reggae", "Schlager", "Rock", "HipHop/RnB", "House/EDM", "Slow/Love", "Mundart"];
+const MOOD_NAMES = ["Party-Charts", "Latino", "Schlager", "Rock", "HipHop/Dancehall", "House/EDM", "Slow/Love", "Mundart"];
 
 // Richtungen, aus denen NICHT automatisch nachgeschoben wird. Slow/Love bleibt als
 // Gastwunsch erlaubt, wuerde als Auto-Fill aber die Tanzflaeche leerraeumen.
@@ -77,10 +77,9 @@ const VOTE_RESULT_DISPLAY_MS = 15000;    // wie lange der Gewinnername nach Schl
 const MOOD_POOL = {
   "Party-Charts": ["Uptown Funk Bruno Mars", "Levitating Dua Lipa", "Blinding Lights The Weeknd", "Can't Stop the Feeling Justin Timberlake", "Party Rock Anthem LMFAO", "Shut Up and Dance Walk the Moon", "I Gotta Feeling Black Eyed Peas", "Cheap Thrills Sia", "Happy Pharrell Williams", "Dynamite Taio Cruz", "Shake It Off Taylor Swift", "On the Floor Jennifer Lopez", "Timber Pitbull Kesha", "September Earth Wind and Fire", "Moves Like Jagger Maroon 5", "Sugar Maroon 5", "Waka Waka Shakira", "Don't Start Now Dua Lipa", "TiK ToK Kesha", "Firework Katy Perry", "Dancing Queen ABBA", "Take On Me a-ha", "Sweet Dreams Eurythmics", "I Wanna Dance with Somebody Whitney Houston", "Billie Jean Michael Jackson", "Africa Toto", "Girls Just Want to Have Fun Cyndi Lauper", "Wannabe Spice Girls", "Never Gonna Give You Up Rick Astley", "Footloose Kenny Loggins"],
   "Latino": ["Despacito Luis Fonsi Daddy Yankee", "Bailando Enrique Iglesias", "Vivir Mi Vida Marc Anthony", "Mi Gente J Balvin Willy William", "Taki Taki DJ Snake Ozuna Cardi B", "Con Calma Daddy Yankee Snow", "Tusa Karol G Nicki Minaj", "Provenza Karol G", "La Gozadera Gente de Zona Marc Anthony", "Ai Se Eu Te Pego Michel Telo", "Waka Waka Shakira", "Sofia Alvaro Soler", "Vente Pa Ca Ricky Martin Maluma", "Bailar Deorro Elvis Crespo", "Subeme la Radio Enrique Iglesias", "Felices los 4 Maluma", "Me Porto Bonito Bad Bunny Chencho Corleone", "Dakiti Bad Bunny Jhay Cortez", "Gasolina Daddy Yankee", "Danza Kuduro Don Omar Lucenzo"],
-  "Dancehall/Reggae": ["Temperature Sean Paul", "Get Busy Sean Paul", "Turn Me On Kevin Lyttle", "It Wasn't Me Shaggy", "Angel Shaggy", "Boombastic Shaggy", "Cheerleader OMI", "Rude MAGIC!", "Could You Be Loved Bob Marley", "Jamming Bob Marley", "Welcome to Jamrock Damian Marley", "Hold Yuh Gyptian", "Baby Boy Beyonce Sean Paul", "Ding Seeed", "Haus am See Peter Fox", "No Letting Go Wayne Wonder", "Miss Fatty Million Stylez", "Sweat A La La La Long Inner Circle", "Here Comes the Hotstepper Ini Kamoze", "Murder She Wrote Chaka Demus Pliers"],
   "Schlager": ["Atemlos durch die Nacht Helene Fischer", "Griechischer Wein Udo Jürgens", "Ein Stern DJ Ötzi", "Cordula Grün Josh", "1000 und 1 Nacht Klaus Lage", "Marmor Stein und Eisen Drafi Deutscher", "Anton aus Tirol DJ Ötzi", "Hulapalu Andreas Gabalier", "Wahnsinn Wolfgang Petry", "Verdammt ich lieb dich Matthias Reim", "Ti Amo Howard Carpendale", "Skandal im Sperrbezirk Spider Murphy Gang", "Major Tom Peter Schilling", "Hölle Hölle Hölle Wolfgang Petry", "Mendocino Michael Holm", "Fürstenfeld STS", "Sierra Madre Zillertaler", "Wir sind wir Peter Wackel", "Layla DJ Robin Schürze", "Joana Roland Kaiser"],
   "Rock": ["Livin' on a Prayer Bon Jovi", "Summer of 69 Bryan Adams", "Highway to Hell AC/DC", "Sweet Child o Mine Guns N Roses", "Mr Brightside The Killers", "Don't Stop Believin Journey", "Seven Nation Army White Stripes", "Basket Case Green Day", "You Shook Me All Night Long AC/DC", "I Love Rock n Roll Joan Jett", "Smells Like Teen Spirit Nirvana", "Wonderwall Oasis", "Zombie The Cranberries", "Song 2 Blur", "Are You Gonna Be My Girl Jet", "Bohemian Rhapsody Queen", "We Will Rock You Queen", "Should I Stay or Should I Go The Clash", "American Idiot Green Day", "The Reason Hoobastank"],
-  "HipHop/RnB": ["Yeah Usher", "In Da Club 50 Cent", "Hey Ya OutKast", "Old Town Road Lil Nas X", "No Diggity Blackstreet", "Crazy in Love Beyonce", "Hips Don't Lie Shakira", "Get Lucky Daft Punk", "Gold Digger Kanye West", "Hot in Herre Nelly", "Jump Around House of Pain", "California Love 2Pac", "SexyBack Justin Timberlake", "Umbrella Rihanna", "Ignition Remix R Kelly", "Empire State of Mind Jay-Z Alicia Keys", "Nice for What Drake", "Uptown Funk Bruno Mars", "This Is How We Do It Montell Jordan", "Low Flo Rida"],
+  "HipHop/Dancehall": ["Yeah Usher", "In Da Club 50 Cent", "Hey Ya OutKast", "Old Town Road Lil Nas X", "No Diggity Blackstreet", "Crazy in Love Beyonce", "Hips Don't Lie Shakira", "Get Lucky Daft Punk", "Gold Digger Kanye West", "Hot in Herre Nelly", "Jump Around House of Pain", "California Love 2Pac", "SexyBack Justin Timberlake", "Umbrella Rihanna", "Ignition Remix R Kelly", "Empire State of Mind Jay-Z Alicia Keys", "Nice for What Drake", "Uptown Funk Bruno Mars", "This Is How We Do It Montell Jordan", "Low Flo Rida", "Temperature Sean Paul", "Get Busy Sean Paul", "Turn Me On Kevin Lyttle", "It Wasn't Me Shaggy", "Angel Shaggy", "Boombastic Shaggy", "Cheerleader OMI", "Rude MAGIC!", "Could You Be Loved Bob Marley", "Jamming Bob Marley", "Welcome to Jamrock Damian Marley", "Hold Yuh Gyptian", "Baby Boy Beyonce Sean Paul", "Ding Seeed", "Haus am See Peter Fox", "No Letting Go Wayne Wonder", "Miss Fatty Million Stylez", "Sweat A La La La Long Inner Circle", "Here Comes the Hotstepper Ini Kamoze", "Murder She Wrote Chaka Demus Pliers"],
   "House/EDM": ["One More Time Daft Punk", "Titanium David Guetta Sia", "Wake Me Up Avicii", "Don't You Worry Child Swedish House Mafia", "Levels Avicii", "Animals Martin Garrix", "This Is What You Came For Calvin Harris", "Clarity Zedd", "Summer Calvin Harris", "Silhouettes Avicii", "Turn Down for What DJ Snake", "Where Them Girls At David Guetta", "Reload Sebastian Ingrosso Tommy Trash", "Faded Alan Walker", "Lean On Major Lazer", "The Middle Zedd", "Sweet Nothing Calvin Harris", "Hey Brother Avicii", "Feel So Close Calvin Harris", "Firestone Kygo"],
   "Slow/Love": ["Perfect Ed Sheeran", "Can't Help Falling in Love Elvis Presley", "All of Me John Legend", "Thinking Out Loud Ed Sheeran", "Your Song Elton John", "Make You Feel My Love Adele", "At Last Etta James", "Marry You Bruno Mars", "A Thousand Years Christina Perri", "Wonderful Tonight Eric Clapton", "Everything Michael Bublé", "Say You Won't Let Go James Arthur", "You Are the Best Thing Ray LaMontagne", "Lucky Jason Mraz Colbie Caillat", "Just the Way You Are Bruno Mars", "Endless Love Diana Ross", "Unchained Melody Righteous Brothers", "Have I Told You Lately Van Morrison", "Kiss Me Sixpence None the Richer", "I Don't Want to Miss a Thing Aerosmith"],
   "Mundart": ["079 Lo & Leduc", "W. Nuss vo Bümpliz Patent Ochsner", "Ewigi Liäbi Mash", "Bring en hei Baschi", "Fingt di gäng Hecht", "Ke Summer 77 Bombay Street", "Uf u dervo Gölä", "Schwan Bligg", "Marlène Stephan Eicher", "Hemmige Stephan Eicher", "Manhattan Trauffer", "Alperose Polo Hofer", "Kiosk Trauffer", "Heidi Trauffer", "Dr Alpeflug Baschi", "I schänke dir mis Härz Züri West", "Für immer uf di Kunz", "Summer Kunz", "Butterfly Trauffer", "Meh weder Gäld Dodo"],
@@ -130,55 +129,55 @@ const SCHLAGER_ARTISTS = new Set([
 // sonst gewinnt hier evtl. der falsche Gast. MANUAL_MOOD (pro Track-ID) schlaegt weiterhin
 // alles. Liste ist bewusst zum Erweitern gedacht -> siehe GET /api/pool?debug=1.
 const ARTIST_MOOD = new Map([
-  // --- HipHop/RnB ---
-  ["eminem","HipHop/RnB"],["dr. dre","HipHop/RnB"],["50 cent","HipHop/RnB"],
-  ["snoop dogg","HipHop/RnB"],["kendrick lamar","HipHop/RnB"],["travis scott","HipHop/RnB"],
-  ["post malone","HipHop/RnB"],["cardi b","HipHop/RnB"],["nicki minaj","HipHop/RnB"],
-  ["macklemore","HipHop/RnB"],["wiz khalifa","HipHop/RnB"],["jay-z","HipHop/RnB"],
-  ["2pac","HipHop/RnB"],["notorious b.i.g","HipHop/RnB"],["ludacris","HipHop/RnB"],
-  ["outkast","HipHop/RnB"],["missy elliott","HipHop/RnB"],["50cent","HipHop/RnB"],
-  ["usher","HipHop/RnB"],["ne-yo","HipHop/RnB"],["chris brown","HipHop/RnB"],
-  ["akon","HipHop/RnB"],["t-pain","HipHop/RnB"],["cypress hill","HipHop/RnB"],
-  ["coolio","HipHop/RnB"],["house of pain","HipHop/RnB"],["ice cube","HipHop/RnB"],
-  ["kanye","HipHop/RnB"],["doja cat","HipHop/RnB"],["lil nas x","HipHop/RnB"],
-  ["flo rida","HipHop/RnB"],["samy deluxe","HipHop/RnB"],
-  // --- HipHop/RnB: Deutschrap (DE/AT + Hochdeutsch rappende CH-Acts) ---
+  // --- HipHop/Dancehall ---
+  ["eminem","HipHop/Dancehall"],["dr. dre","HipHop/Dancehall"],["50 cent","HipHop/Dancehall"],
+  ["snoop dogg","HipHop/Dancehall"],["kendrick lamar","HipHop/Dancehall"],["travis scott","HipHop/Dancehall"],
+  ["post malone","HipHop/Dancehall"],["cardi b","HipHop/Dancehall"],["nicki minaj","HipHop/Dancehall"],
+  ["macklemore","HipHop/Dancehall"],["wiz khalifa","HipHop/Dancehall"],["jay-z","HipHop/Dancehall"],
+  ["2pac","HipHop/Dancehall"],["notorious b.i.g","HipHop/Dancehall"],["ludacris","HipHop/Dancehall"],
+  ["outkast","HipHop/Dancehall"],["missy elliott","HipHop/Dancehall"],["50cent","HipHop/Dancehall"],
+  ["usher","HipHop/Dancehall"],["ne-yo","HipHop/Dancehall"],["chris brown","HipHop/Dancehall"],
+  ["akon","HipHop/Dancehall"],["t-pain","HipHop/Dancehall"],["cypress hill","HipHop/Dancehall"],
+  ["coolio","HipHop/Dancehall"],["house of pain","HipHop/Dancehall"],["ice cube","HipHop/Dancehall"],
+  ["kanye","HipHop/Dancehall"],["doja cat","HipHop/Dancehall"],["lil nas x","HipHop/Dancehall"],
+  ["flo rida","HipHop/Dancehall"],["samy deluxe","HipHop/Dancehall"],
+  // --- HipHop/Dancehall: Deutschrap (DE/AT + Hochdeutsch rappende CH-Acts) ---
   // Grund fuer diesen Block: Spotify liefert fuer viele Deutschrapper ein leeres
   // genres-Array -> keine GENRE_RULE greift -> sie fielen als "nicht ruhig" in
-  // Party-Charts. Alle hier -> HipHop/RnB.
+  // Party-Charts. Alle hier -> HipHop/Dancehall.
   // ACHTUNG Mundart: Schweizer Mundart-Rapper (Bligg, Stress, Greis, Baze, EKR,
   // Nativ, Mimiks, Pronto, Breitbild ...) gehoeren NICHT hierher, sondern nach
   // Mundart. Die laufen ueber MUNDART_ARTISTS (steht weiter oben, greift zuerst).
   // Nur Acts, die Hochdeutsch rappen (Loredana, RAF Camora), stehen hier.
   //   Aggro/Berlin & Ruhrpott (2005+)
-  ["sido","HipHop/RnB"],["bushido","HipHop/RnB"],["fler","HipHop/RnB"],
-  ["b-tight","HipHop/RnB"],["kool savas","HipHop/RnB"],["azad","HipHop/RnB"],
-  ["eko fresh","HipHop/RnB"],["kollegah","HipHop/RnB"],["farid bang","HipHop/RnB"],
-  ["genetikk","HipHop/RnB"],["257ers","HipHop/RnB"],["xatar","HipHop/RnB"],
-  ["haftbefehl","HipHop/RnB"],["kurdo","HipHop/RnB"],
+  ["sido","HipHop/Dancehall"],["bushido","HipHop/Dancehall"],["fler","HipHop/Dancehall"],
+  ["b-tight","HipHop/Dancehall"],["kool savas","HipHop/Dancehall"],["azad","HipHop/Dancehall"],
+  ["eko fresh","HipHop/Dancehall"],["kollegah","HipHop/Dancehall"],["farid bang","HipHop/Dancehall"],
+  ["genetikk","HipHop/Dancehall"],["257ers","HipHop/Dancehall"],["xatar","HipHop/Dancehall"],
+  ["haftbefehl","HipHop/Dancehall"],["kurdo","HipHop/Dancehall"],
   //   Conscious / Rap-Rock / 2010er
-  ["casper","HipHop/RnB"],["marteria","HipHop/RnB"],["marsimoto","HipHop/RnB"],
-  ["k.i.z","HipHop/RnB"],["prinz pi","HipHop/RnB"],["alligatoah","HipHop/RnB"],
-  ["megaloh","HipHop/RnB"],["afrob","HipHop/RnB"],["max herre","HipHop/RnB"],
-  ["jan delay","HipHop/RnB"],["trettmann","HipHop/RnB"],["kontra k","HipHop/RnB"],
-  ["antilopen gang","HipHop/RnB"],["zugezogen maskulin","HipHop/RnB"],["og keemo","HipHop/RnB"],
+  ["casper","HipHop/Dancehall"],["marteria","HipHop/Dancehall"],["marsimoto","HipHop/Dancehall"],
+  ["k.i.z","HipHop/Dancehall"],["prinz pi","HipHop/Dancehall"],["alligatoah","HipHop/Dancehall"],
+  ["megaloh","HipHop/Dancehall"],["afrob","HipHop/Dancehall"],["max herre","HipHop/Dancehall"],
+  ["jan delay","HipHop/Dancehall"],["trettmann","HipHop/Dancehall"],["kontra k","HipHop/Dancehall"],
+  ["antilopen gang","HipHop/Dancehall"],["zugezogen maskulin","HipHop/Dancehall"],["og keemo","HipHop/Dancehall"],
   //   Trap / 187 / KMN (2015+)
-  ["187 strassenbande","HipHop/RnB"],["bonez mc","HipHop/RnB"],["gzuz","HipHop/RnB"],
-  ["sa4","HipHop/RnB"],["raf camora","HipHop/RnB"],["rafcamora","HipHop/RnB"],
-  ["capital bra","HipHop/RnB"],["samra","HipHop/RnB"],["ufo361","HipHop/RnB"],
-  ["azet","HipHop/RnB"],["zuna","HipHop/RnB"],["miami yacine","HipHop/RnB"],
-  ["kmn gang","HipHop/RnB"],["summer cem","HipHop/RnB"],["kc rebell","HipHop/RnB"],
-  ["ak ausserkontrolle","HipHop/RnB"],["ak ausser kontrolle","HipHop/RnB"],
-  ["veysel","HipHop/RnB"],["majoe","HipHop/RnB"],["olexesh","HipHop/RnB"],
-  ["dardan","HipHop/RnB"],["celo & abdi","HipHop/RnB"],["18 karat","HipHop/RnB"],
-  ["bausa","HipHop/RnB"],["shindy","HipHop/RnB"],["loredana","HipHop/RnB"],
+  ["187 strassenbande","HipHop/Dancehall"],["bonez mc","HipHop/Dancehall"],["gzuz","HipHop/Dancehall"],
+  ["sa4","HipHop/Dancehall"],["raf camora","HipHop/Dancehall"],["rafcamora","HipHop/Dancehall"],
+  ["capital bra","HipHop/Dancehall"],["samra","HipHop/Dancehall"],["ufo361","HipHop/Dancehall"],
+  ["azet","HipHop/Dancehall"],["zuna","HipHop/Dancehall"],["miami yacine","HipHop/Dancehall"],
+  ["kmn gang","HipHop/Dancehall"],["summer cem","HipHop/Dancehall"],["kc rebell","HipHop/Dancehall"],
+  ["ak ausserkontrolle","HipHop/Dancehall"],["ak ausser kontrolle","HipHop/Dancehall"],
+  ["veysel","HipHop/Dancehall"],["majoe","HipHop/Dancehall"],["olexesh","HipHop/Dancehall"],
+  ["dardan","HipHop/Dancehall"],["celo & abdi","HipHop/Dancehall"],["18 karat","HipHop/Dancehall"],
+  ["bausa","HipHop/Dancehall"],["shindy","HipHop/Dancehall"],["loredana","HipHop/Dancehall"],
   //   Neue Generation (2020+)
-  ["apache 207","HipHop/RnB"],["pashanim","HipHop/RnB"],["ski aggu","HipHop/RnB"],
-  ["makko","HipHop/RnB"],["badmomzjay","HipHop/RnB"],["reezy","HipHop/RnB"],
-  ["t-low","HipHop/RnB"],["01099","HipHop/RnB"],["ayliva","HipHop/RnB"],
-  ["shirin david","HipHop/RnB"],["jazeek","HipHop/RnB"],["lacazette","HipHop/RnB"],
-  ["juju","HipHop/RnB"],["nura","HipHop/RnB"],["haiyti","HipHop/RnB"],
-  ["sxtn","HipHop/RnB"],["yung hurn","HipHop/RnB"],
+  ["apache 207","HipHop/Dancehall"],["pashanim","HipHop/Dancehall"],["ski aggu","HipHop/Dancehall"],
+  ["makko","HipHop/Dancehall"],["badmomzjay","HipHop/Dancehall"],["reezy","HipHop/Dancehall"],
+  ["t-low","HipHop/Dancehall"],["01099","HipHop/Dancehall"],["ayliva","HipHop/Dancehall"],
+  ["shirin david","HipHop/Dancehall"],["jazeek","HipHop/Dancehall"],["lacazette","HipHop/Dancehall"],
+  ["juju","HipHop/Dancehall"],["nura","HipHop/Dancehall"],["haiyti","HipHop/Dancehall"],
+  ["sxtn","HipHop/Dancehall"],["yung hurn","HipHop/Dancehall"],
   // Bewusst NICHT als Teilstring eingetragen (Kollisionsgefahr, wuerde Fremd-Acts
   // faelschlich nach HipHop ziehen). Bei Bedarf pro Track ueber MANUAL_MOOD pinnen:
   //   "cro"    -> "Croatia Squad" (House), "macro", ...
@@ -227,24 +226,24 @@ const ARTIST_MOOD = new Map([
   ["bohse onkelz","Rock"],["kraftklub","Rock"],["broilers","Rock"],
   ["arctic monkeys","Rock"],["kings of leon","Rock"],["queens of the stone age","Rock"],
   ["oasis","Rock"],["pearl jam","Rock"],
-  // --- Dancehall/Reggae ---
-  ["bob marley","Dancehall/Reggae"],["sean paul","Dancehall/Reggae"],["shaggy","Dancehall/Reggae"],
-  ["damian marley","Dancehall/Reggae"],["gentleman","Dancehall/Reggae"],["patrice","Dancehall/Reggae"],
-  ["inner circle","Dancehall/Reggae"],["beenie man","Dancehall/Reggae"],["konshens","Dancehall/Reggae"],
-  ["popcaan","Dancehall/Reggae"],["seeed","Dancehall/Reggae"],["chronixx","Dancehall/Reggae"],
-  ["million stylez","Dancehall/Reggae"],
-  ["koffee","Dancehall/Reggae"],["vybz kartel","Dancehall/Reggae"],["capleton","Dancehall/Reggae"],
-  ["sizzla","Dancehall/Reggae"],["buju banton","Dancehall/Reggae"],["elephant man","Dancehall/Reggae"],
-  ["collie buddz","Dancehall/Reggae"],["protoje","Dancehall/Reggae"],["alborosie","Dancehall/Reggae"],
-  ["jimmy cliff","Dancehall/Reggae"],["ziggy marley","Dancehall/Reggae"],["shabba ranks","Dancehall/Reggae"],
+  // --- HipHop/Dancehall: Reggae/Dancehall ---
+  ["bob marley","HipHop/Dancehall"],["sean paul","HipHop/Dancehall"],["shaggy","HipHop/Dancehall"],
+  ["damian marley","HipHop/Dancehall"],["gentleman","HipHop/Dancehall"],["patrice","HipHop/Dancehall"],
+  ["inner circle","HipHop/Dancehall"],["beenie man","HipHop/Dancehall"],["konshens","HipHop/Dancehall"],
+  ["popcaan","HipHop/Dancehall"],["seeed","HipHop/Dancehall"],["chronixx","HipHop/Dancehall"],
+  ["million stylez","HipHop/Dancehall"],
+  ["koffee","HipHop/Dancehall"],["vybz kartel","HipHop/Dancehall"],["capleton","HipHop/Dancehall"],
+  ["sizzla","HipHop/Dancehall"],["buju banton","HipHop/Dancehall"],["elephant man","HipHop/Dancehall"],
+  ["collie buddz","HipHop/Dancehall"],["protoje","HipHop/Dancehall"],["alborosie","HipHop/Dancehall"],
+  ["jimmy cliff","HipHop/Dancehall"],["ziggy marley","HipHop/Dancehall"],["shabba ranks","HipHop/Dancehall"],
 ].map(([n, m]) => [norm(n), m]));
 
 // Genre-Schluesselwoerter -> Richtung. Erster Treffer in dieser Reihenfolge gewinnt.
 //
 // ACHTUNG, die Reihenfolge ist nicht kosmetisch: verglichen wird mit gen.includes(k),
 // also Teilstrings. Daraus folgen echte Kollisionen, die nur die Reihenfolge aufloest:
-//   "reggaeton"   enthaelt "reggae"  -> Latino muss vor Dancehall stehen
-//   "trap latino" enthaelt "trap"    -> Latino muss vor HipHop/RnB stehen
+//   "reggaeton"   enthaelt "reggae"  -> Latino muss vor HipHop/Dancehall stehen
+//   "trap latino" enthaelt "trap"    -> Latino muss vor HipHop/Dancehall stehen
 //   "latin house" enthaelt "house"   -> Latino muss vor House/EDM stehen
 //   "dubstep"     enthaelt "dub"     -> "dub" darf kein Dancehall-Keyword sein
 //   "roots rock"  enthaelt "roots"   -> "roots" darf kein Dancehall-Keyword sein
@@ -257,8 +256,7 @@ const ARTIST_MOOD = new Map([
 const GENRE_RULES = [
   ["Schlager",         ["schlager","volksmusik","volkstumlich","apres","ballermann","discofox","stimmung","austropop"]],
   ["Latino",           ["latin","reggaeton","regueton","urbano","dembow","bachata","salsa","merengue","cumbia","kuduro","funk carioca","funk ostentacao","brazilian","brasil","mambo","perreo","sertanejo"]],
-  ["Dancehall/Reggae", ["dancehall","reggae","ragga","soca"]],
-  ["HipHop/RnB",       ["hip hop","hip-hop","hiphop","rap","trap","r&b","rnb","urban contemporary","drill","grime","boom bap"]],
+  ["HipHop/Dancehall", ["dancehall","reggae","ragga","soca","hip hop","hip-hop","hiphop","rap","trap","r&b","rnb","urban contemporary","drill","grime","boom bap"]],
   ["House/EDM",        ["house","techno","trance","edm","electro","eurodance","big room","future bass","dubstep","drum and bass","hardstyle","hands up","italo dance","tech house","deep house","rave"]],
   ["Rock",             ["rock","metal","punk","grunge","hardcore","emo","thrash","grindcore"]],
   ["Mundart",          ["mundart","schwiizer","schweizerdeutsch","swiss"]],
@@ -270,10 +268,10 @@ const GENRE_RULES = [
 const MANUAL_MOOD = {
   // Grenzfaelle aus der Playlist "Hochzeit C&D" (Geschmacksentscheid, siehe
   // claude/musikrichtungen-entscheid.md). Track-ID schlaegt alles andere.
-  "4KHXk0rTD80mEf7bbdK29j": "HipHop/RnB", // Suavemente (Soolking) – wegen french hip hop
+  "4KHXk0rTD80mEf7bbdK29j": "HipHop/Dancehall", // Suavemente (Soolking) – wegen french hip hop
   "5bfrLQFw6AB3Be3fzvY5ER": "Latino",     // Nuttin Nuh Go So (Notch) – statt Dancehall
-  "59NraMJsLaMCVtwXTSia8i": "HipHop/RnB", // Prada (cassö/RAYE/D-Block Europe) – statt House
-  "55lijDD6OAjLFFUHU9tcDm": "HipHop/RnB", // WHERE IS MY HUSBAND! (RAYE) – r&b/pop rap
+  "59NraMJsLaMCVtwXTSia8i": "HipHop/Dancehall", // Prada (cassö/RAYE/D-Block Europe) – statt House
+  "55lijDD6OAjLFFUHU9tcDm": "HipHop/Dancehall", // WHERE IS MY HUSBAND! (RAYE) – r&b/pop rap
 };
 
 // Reine Zuordnung aus Signalen – ohne Netzwerk, daher gut testbar.
@@ -285,7 +283,7 @@ function moodFromSignals({ genres = [], artistName = "", title = "", year = null
 
   // Eindeutige Interpreten vor den Genre-Regeln abfangen. Faengt genau die Faelle,
   // in denen Spotify keine Genres (mehr) liefert und der Track sonst in Party-Charts
-  // durchrutscht (z. B. Eminem -> HipHop/RnB).
+  // durchrutscht (z. B. Eminem -> HipHop/Dancehall).
   for (const [name, mood] of ARTIST_MOOD) {
     if (a.includes(name)) return mood;
   }
