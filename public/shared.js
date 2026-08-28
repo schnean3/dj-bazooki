@@ -3,10 +3,9 @@
 export const MOODS = {
   "Party-Charts":     { color: "#C2A15A", emoji: "🎉" },
   "Latino":           { color: "#C98A5E", emoji: "💃" },
-  "Dancehall/Reggae": { color: "#8FA86B", emoji: "🌴" },
   "Schlager":         { color: "#C08E6A", emoji: "🥂" },
   "Rock":             { color: "#B5726A", emoji: "🎸" },
-  "HipHop/RnB":       { color: "#A08AA6", emoji: "🎤" },
+  "HipHop/Dancehall": { color: "#A08AA6", emoji: "🎤" },
   "House/EDM":        { color: "#7FA6A2", emoji: "🔊" },
   "Slow/Love":        { color: "#D3A9B4", emoji: "💍" },
   "Mundart":          { color: "#93A17C", emoji: "🇨🇭" },
