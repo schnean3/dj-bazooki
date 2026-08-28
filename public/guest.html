@@ -123,7 +123,11 @@
     }
 
     async function vote(id) {
-      await api(`/api/requests/${id}/vote`, { method: "POST", body: JSON.stringify({ guestId: gid }) });
+      const { ok, status, data } = await api(`/api/requests/${id}/vote`, { method: "POST", body: JSON.stringify({ guestId: gid, name: guestName() }) });
+      if (ok && data.promoted) toast("Herz gesetzt — Lied ist jetzt auf der Wunschliste 🎶");
+      else if (status === 429 && data.error === "song_cooldown") toast(`Dieses Lied wurde gerade schon gewünscht — wieder möglich in ${data.nextMin} Min.`);
+      else if (status === 429) toast(`Limit erreicht. Nächster Wunsch in ${data.nextMin} Min.`);
+      else if (status === 409) toast("Schon auf der Wunschliste ♥");
       refresh();
     }
 
@@ -238,7 +242,7 @@
           el("div", { style: "display:flex;align-items:center;gap:8px" },
             el("span", { class: "truncate", style: "font-weight:600" }, r.title), badge),
           el("div", { class: "truncate muted", style: "font-size:12.5px" }, `${r.artist} · ${MOODS[r.mood].emoji} ${r.mood}`),
-          el("div", { class: "truncate", style: "font-size:12px;color:var(--gold);margin-top:2px" }, `von ${mine ? "dir" : r.addedBy}`)),
+          r.addedBy ? el("div", { class: "truncate", style: "font-size:12px;color:var(--gold);margin-top:2px" }, `von ${mine ? "dir" : r.addedBy}`) : null),
         el("button", { class: "pill", style: voted ? `color:${MOODS[r.mood].color};border-color:${MOODS[r.mood].color}66` : "", disabled: voted ? "" : null, onclick: voted ? null : () => vote(r.id) }, `♥ ${r.weight}`));
     }
 
