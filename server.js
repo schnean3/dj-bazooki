@@ -420,7 +420,8 @@ let dj = { access: null, refresh: null, expires: 0, scope: "" };
 let appToken = { value: null, expires: 0 }; // Client-Credentials fuer Gaeste-Suche
 
 // Auto-Advance: beobachtet den laufenden Song und schiebt den naechsten nach.
-const AUTO_THRESHOLD_MS = 40000; // so viel vor Songende wird nachgeschoben
+const AUTO_THRESHOLD_MS = 40000; // so viel vor Songende wird ein passender Song nachgeschoben
+const DIRECTION_FALLBACK_MS = 60000; // 1 Min: Deadline fuer Notfall-Ausweiche auf eine andere Richtung
 let auto = { pushedForUri: null, slot: 0 };
 let playback = { is_playing: false, uri: null, title: null, artist: null, progress: 0, duration: 0, ts: 0 };
 
@@ -606,43 +607,58 @@ function shuffle(arr) {
   return a;
 }
 
-// Waehlt den naechsten Song fuers Auto-Advance nach dem Mischverhaeltnis 1:2.
-//   - DJ-Pins haben immer Vorrang und zaehlen NICHT ins Verhaeltnis (manuelle Uebersteuerung).
-//   - Sonst: jeder WISH_EVERY-te Slot ist ein Gastwunsch, dazwischen Pool-Songs.
-//   - Faellt eine Seite leer aus, wird die andere genommen (nie Stille).
-// Rueckgabe: { track, counts } – counts=true, wenn der Song das Verhaeltnis weiterzaehlt.
-function pickNextForQueue() {
+// Waehlt den naechsten Song fuers Auto-Advance.
+//   - DJ-Pins haben immer Vorrang (manuelle Uebersteuerung), unabhaengig von Richtung/Zeit.
+//   - Songs, die NICHT zur aktuell laufenden Richtung gehoeren, sind normal nicht spielbar
+//     und bleiben in der Queue liegen ("Warteliste") - auch wenn sie ganz oben stehen.
+//     Sie sammeln weiter Herzen und bestimmen ueber computeVibe() die naechste Richtung mit.
+//   - Erst wenn die eigene Richtung GAR NICHTS liefert UND der Song bis auf
+//     DIRECTION_FALLBACK_MS (1 Min) heruntergezaehlt ist, darf als Notfall doch der
+//     oberste Song der Queue genommen werden (egal welche Richtung) - lieber ein
+//     Richtungsbruch als tote Luft.
+//   - Innerhalb der eigenen Richtung: STRICT_QUEUE_ORDER nimmt die oberste sichtbare Zeile;
+//     sonst greift das WISH_EVERY-Mischverhaeltnis Wunsch:Pool.
+// remainingMs = Restzeit des laufenden Songs. Rueckgabe: { track, counts } oder null
+// (= aktuell nichts spielbares -> warten, kein Nachschub in diesem Tick).
+function pickNextForQueue(remainingMs) {
   const queued = state.requests.filter((r) => r.status === "queued" && !r.sent);
   if (!queued.length) return null;
 
   const pins = queued.filter((r) => r.pinned).sort((a, b) => (a.order || 0) - (b.order || 0));
   if (pins.length) return { track: pins[0], counts: false };
 
-  // Strikt-Modus: exakt die oberste sichtbare Zeile nehmen (kein Wunsch/Pool-Mischen).
-  if (STRICT_QUEUE_ORDER) {
-    const top = queued.slice().sort(queueSort)[0];
-    return top ? { track: top, counts: false } : null;
+  // mood = die Richtung, die gerade auch den Pool fuellt (autoFillMood), damit
+  // Wunsch und Pool dieselbe Spur fahren.
+  const mood = autoFillMood();
+  const inDirection = queued.filter((r) => !mood || r.mood === mood);
+
+  if (inDirection.length && remainingMs <= AUTO_THRESHOLD_MS) {
+    let track = null;
+    let counts = false;
+    if (STRICT_QUEUE_ORDER) {
+      // Strikt-Modus: exakt die oberste sichtbare Zeile der eigenen Richtung.
+      track = inDirection.slice().sort(queueSort)[0];
+    } else {
+      const wishes = inDirection
+        .filter((r) => !r.auto && !r.dj)
+        .sort((a, b) => likeCount(b) - likeCount(a) || (a.order || 0) - (b.order || 0));
+      const pools = inDirection
+        .filter((r) => r.auto)
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+      const wantWish = auto.slot % WISH_EVERY === 0; // Slot 0,3,6,... = Wunsch -> 1 Wunsch : 2 Pool
+      track = wantWish ? wishes[0] || pools[0] : pools[0] || wishes[0];
+      counts = !!track;
+    }
+    if (track) return { track, counts };
   }
 
-  // Nur Wuensche der AKTUELL laufenden Richtung sind abspielbar. Wuensche anderer
-  // Richtungen bleiben in der Queue liegen ("Warteliste"), sammeln weiter Herzen und
-  // bestimmen ueber computeVibe() die naechste Richtung mit. Kommt ihre Richtung dran,
-  // stehen sie bereits nach Herzen sortiert startklar. mood = die Richtung, die gerade
-  // auch den Pool fuellt (autoFillMood), damit Wunsch und Pool dieselbe Spur fahren.
-  const mood = autoFillMood();
-  const wishes = queued
-    .filter((r) => !r.auto && !r.dj && (!mood || r.mood === mood))
-    .sort((a, b) => likeCount(b) - likeCount(a) || (a.order || 0) - (b.order || 0));
-  const pools = queued
-    .filter((r) => r.auto && (!mood || r.mood === mood))
-    .sort((a, b) => (a.order || 0) - (b.order || 0));
-
-  const wantWish = auto.slot % WISH_EVERY === 0; // Slot 0,3,6,... = Wunsch -> 1 Wunsch : 2 Pool
-  // Kein passender Wunsch da? Dann Pool-Song (auch Richtung), NICHT ein fremder Wunsch.
-  let track = wantWish ? wishes[0] || pools[0] : pools[0] || wishes[0];
-  // Allerletzte Reissleine gegen Stille: irgendwas aus der Queue (auch fremde Richtung).
-  if (!track) track = queued.slice().sort(queueSort)[0];
-  return { track, counts: true };
+  // Eigene Richtung liefert nichts (leer oder noch nicht befuellt). Nur als Notfall,
+  // ab DIRECTION_FALLBACK_MS vor Songende, auf eine andere Richtung ausweichen.
+  if (!inDirection.length && remainingMs <= DIRECTION_FALLBACK_MS) {
+    const top = queued.slice().sort(queueSort)[0];
+    if (top) return { track: top, counts: false };
+  }
+  return null;
 }
 
 /* ----------------------------- App ----------------------------- */
@@ -1498,8 +1514,8 @@ async function tick() {
   // Nachschieben, wenn der aktuelle Song fast fertig ist.
   if (state.autoAdvance && playback.is_playing && playback.duration > 0) {
     const remaining = playback.duration - playback.progress;
-    if (remaining <= AUTO_THRESHOLD_MS && auto.pushedForUri !== uri) {
-      const pick = pickNextForQueue();
+    if (remaining <= DIRECTION_FALLBACK_MS && auto.pushedForUri !== uri) {
+      const pick = pickNextForQueue(remaining);
       if (pick?.track) {
         // Guard SOFORT setzen (vor dem await): sonst starten die naechsten 5s-Ticks,
         // bevor Spotify geantwortet hat, und schicken denselben Song mehrfach.
