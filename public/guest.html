@@ -119,26 +119,42 @@
     }
 
     // --- Voting: "wer bestimmt den naechsten Song" (Pop-up, alle ~20 Min) ---
-    let voteState = { id: null, choiceMade: false, tickTimer: null };
+    // dismissed: Gast hat selbst gewählt -> Pop-up blendet 1.5s danach lokal aus,
+    // kommt aber zwingend zurück sobald der Server die Runde schliesst (Ergebnis).
+    let voteState = { id: null, choiceMade: false, dismissed: false, tickTimer: null, dismissTimer: null };
     const fmtCount = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
 
     function renderVoteModal(v) {
       const root = $("modal-root");
-      if (!v) { if (voteState.id) { root.innerHTML = ""; clearInterval(voteState.tickTimer); voteState = { id: null, choiceMade: false, tickTimer: null }; } return; }
+      if (!v) {
+        if (voteState.id) {
+          root.innerHTML = "";
+          clearInterval(voteState.tickTimer);
+          clearTimeout(voteState.dismissTimer);
+          voteState = { id: null, choiceMade: false, dismissed: false, tickTimer: null, dismissTimer: null };
+        }
+        return;
+      }
 
-      // Neue Runde (oder eigener Reload mitten drin) -> Pop-up frisch aufbauen.
+      // Neue Runde (oder eigener Reload mitten drin) -> State + Pop-up frisch aufbauen.
       if (voteState.id !== v.id) {
         clearInterval(voteState.tickTimer);
-        voteState = { id: v.id, choiceMade: v.voted, tickTimer: null };
+        clearTimeout(voteState.dismissTimer);
+        voteState = { id: v.id, choiceMade: v.voted, dismissed: false, tickTimer: null, dismissTimer: null };
         root.innerHTML = "";
-        const modal = el("div", { class: "modal", id: "vote-modal" });
-        root.append(el("div", { class: "overlay" }, modal));
       }
-      const modal = $("vote-modal");
-      if (!modal) return;
 
+      // Ergebnis-Phase: immer zeigen, auch wenn der Gast nach dem eigenen Vote
+      // das Pop-up lokal schon ausgeblendet hat.
       if (v.closed) {
         clearInterval(voteState.tickTimer);
+        clearTimeout(voteState.dismissTimer);
+        voteState.dismissed = false;
+        let modal = $("vote-modal");
+        if (!modal) {
+          modal = el("div", { class: "modal", id: "vote-modal" });
+          root.append(el("div", { class: "overlay" }, modal));
+        }
         modal.innerHTML = "";
         modal.append(el("div", { style: "text-align:center" },
           el("div", { class: "muted eyebrow" }, "Voting beendet"),
@@ -151,6 +167,14 @@
         return;
       }
 
+      // Waehrend offener Runde: nach eigenem Vote blendet castVote() nach 1.5s lokal aus.
+      if (voteState.dismissed) { root.innerHTML = ""; return; }
+
+      let modal = $("vote-modal");
+      if (!modal) {
+        modal = el("div", { class: "modal", id: "vote-modal" });
+        root.append(el("div", { class: "overlay" }, modal));
+      }
       modal.innerHTML = "";
       const countEl = el("div", { class: "muted eyebrow", style: "font-family:var(--display);font-weight:500;font-variant-numeric:tabular-nums;font-size:44px;line-height:1;color:var(--ink);margin:6px 0 2px;text-align:center" },
         v.closesAt != null ? fmtCount(v.closesAt - Date.now()) : "…");
@@ -189,8 +213,19 @@
 
     async function castVote(i) {
       voteState.choiceMade = true; // optimistisch sofort sperren, kein Doppeltap
+      // Pop-up 1.5s nach der Auswahl lokal ausblenden (kommt bei Rundenschluss zwingend zurück).
+      clearTimeout(voteState.dismissTimer);
+      voteState.dismissTimer = setTimeout(() => {
+        voteState.dismissed = true;
+        const root = $("modal-root");
+        if (root) root.innerHTML = "";
+      }, 1500);
       const { ok } = await api("/api/vote/cast", { method: "POST", body: JSON.stringify({ guestId: gid, choice: i }) });
-      if (!ok) voteState.choiceMade = false;
+      if (!ok) {
+        voteState.choiceMade = false;
+        clearTimeout(voteState.dismissTimer);
+        voteState.dismissed = false;
+      }
       refresh();
     }
 
