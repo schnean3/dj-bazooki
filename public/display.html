@@ -71,9 +71,13 @@
   .chip-row b{ color:var(--gold); }
 
   .vote-box{ text-align:center; }
-  .vote-names{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:10px 0 6px; }
-  .vote-pill{ background:var(--surface2); border:1px solid var(--border); border-radius:999px; padding:7px 15px; font-family:var(--display); font-weight:600; font-size:15px; }
-  .vote-timer{ color:var(--dim); font-size:12.5px; }
+  .vote-label{ font-size:13px; color:var(--dim); text-transform:uppercase; letter-spacing:1.5px; font-weight:600; margin-bottom:10px; }
+  .vote-bars{ text-align:left; }
+  .vote-bar-row{ display:flex; align-items:center; gap:10px; margin-bottom:9px; }
+  .vote-bar-name{ width:auto; max-width:34%; flex-shrink:0; font-family:var(--display); font-weight:600; font-size:14.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .vote-bar-row .bar-track{ flex:1; height:14px; }
+  .vote-bar-count{ width:20px; flex-shrink:0; text-align:right; font-size:13px; color:var(--dim); font-variant-numeric:tabular-nums; }
+  .vote-timer{ color:var(--dim); font-size:12.5px; margin-top:4px; }
   .vote-winner{ font-family:var(--script); color:var(--gold); font-size:clamp(30px,4vw,40px); margin:6px 0 2px; }
 
   .mini-vibe .vibe{ border:none; box-shadow:none; padding:0; background:none; }
@@ -115,7 +119,7 @@
 
         <div id="vote-panel" class="panel vote-box" style="display:none"></div>
 
-        <div id="horn-chip" class="chip-row" style="display:none;margin-bottom:18px"></div>
+        <div id="next-vote-chip" class="chip-row" style="display:none;margin-bottom:18px"></div>
 
         <div class="panel">
           <div class="head"><div class="section-head" style="font-size:15px;color:var(--dim);font-family:var(--body);font-weight:600;text-transform:uppercase;letter-spacing:1px">Richtungswahl der Gäste</div></div>
@@ -226,15 +230,19 @@ function renderUpNext(requests, nowId) {
   });
 }
 
-function renderHorn(data) {
-  const host = document.getElementById("horn-chip");
-  if (!data.hornEnabled || data.hornInMs == null) { host.style.display = "none"; return; }
+// Zeigt den Countdown bis zum naechsten Voting - nur sichtbar, wenn gerade
+// KEIN Voting laeuft (waehrend eines Votings uebernimmt das vote-panel diese Stelle).
+function renderNextVote(data) {
+  const host = document.getElementById("next-vote-chip");
+  if (data.vote || !data.voteEnabled || data.voteInMs == null) { host.style.display = "none"; return; }
   host.style.display = "";
   host.innerHTML = "";
-  host.append(el("span", { style: "font-size:20px" }, "🎺"), el("span", {}, "Nächstes Horn ", el("b", {}, fmtClock(data.hornInMs))));
+  host.append(el("span", { style: "font-size:20px" }, "🗳️"), el("span", {}, "Nächstes Voting ", el("b", {}, fmtClock(data.voteInMs))));
 }
 
-function renderVote(data) {
+// Waehrend eines laufenden Votings holt NUR diese Seite (nicht guest.html/dj.html)
+// den Zwischenstand via /api/vote/live und zeigt ihn live als Balken.
+async function renderVote(data) {
   const host = document.getElementById("vote-panel");
   const v = data.vote;
   if (!v) { host.style.display = "none"; return; }
@@ -242,24 +250,32 @@ function renderVote(data) {
   host.innerHTML = "";
   if (v.closed) {
     host.append(
-      el("div", { style: "font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:1.5px;font-weight:600" }, "Voting"),
+      el("div", { class: "vote-label" }, "Voting"),
       el("div", { class: "vote-winner" }, v.winnerName ? v.winnerName : "—"),
       el("div", { class: "vote-timer" }, v.winnerName ? "hat gewonnen 🎉" : "niemand hat abgestimmt"));
-  } else {
-    const closesTxt = v.closesAt != null ? "schliesst in " + fmtClock(v.closesAt - Date.now()) : "schliesst nach diesem Song";
-    host.append(
-      el("div", { style: "font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:1.5px;font-weight:600" }, "Voting läuft 📲"),
-      el("div", { class: "vote-names" }, v.names.map((n) => el("span", { class: "vote-pill" }, n))),
-      el("div", { class: "vote-timer" }, closesTxt));
+    return;
   }
+  const { data: live } = await api("/api/vote/live");
+  const counts = live?.counts || v.names.map(() => 0);
+  const total = counts.reduce((a, b) => a + b, 0);
+  const max = Math.max(1, ...counts);
+  const closesTxt = v.closesAt != null ? "schliesst in " + fmtClock(v.closesAt - Date.now()) : "schliesst nach diesem Song";
+  host.append(
+    el("div", { class: "vote-label" }, "Voting läuft 📲"),
+    el("div", { class: "vote-bars" }, v.names.map((n, i) =>
+      el("div", { class: "vote-bar-row" },
+        el("div", { class: "vote-bar-name truncate" }, n),
+        el("div", { class: "bar-track" }, el("div", { class: "bar-fill", style: `width:${Math.max(3, (counts[i] / max) * 100)}%;background:var(--gold)` })),
+        el("div", { class: "vote-bar-count" }, counts[i])))),
+    el("div", { class: "vote-timer" }, closesTxt + (total ? ` · ${total} Stimme${total === 1 ? "" : "n"}` : " · noch keine Stimme")));
 }
 
 async function refresh() {
   const { data } = await api("/api/state");
   renderHero(data.nowPlaying, data.playback, data.requests);
   renderUpNext(data.requests, data.nowPlaying?.id);
-  renderHorn(data);
-  renderVote(data);
+  renderNextVote(data);
+  await renderVote(data);
   renderCurrentDirection(document.getElementById("current-dir"), data.committedDirection);
   renderSwitchHint(document.getElementById("switch"), data.directionSwitch, data.vibe, "dj");
   renderVibe(document.getElementById("vibe"), data.vibe, false);
