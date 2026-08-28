@@ -72,7 +72,7 @@ const VOTE_CANDIDATES = 4;             // so viele Gaeste pro Runde zur Auswahl
 const VOTE_CLOSE_BEFORE_END_MS = 60000;  // Voting schliesst 1 Min vor Songende
 const VOTE_MIN_WINDOW_MS = 90000;        // unter diesem Fenster wird stattdessen ans naechste Songende gebunden
 const VOTE_CLOSE_FLOOR_MS = 20000;       // Sicherheits-Minimum, falls auch der naechste Song sehr kurz ist
-const VOTE_RESULT_DISPLAY_MS = 15000;    // wie lange der Gewinnername nach Schluss noch angezeigt wird
+const VOTE_RESULT_DISPLAY_MS = 8000;     // wie lange der Gewinnername nach Schluss noch angezeigt wird
 
 // Kuratierte Publikumshits pro Richtung. Werden per Spotify-Suche zu echten Tracks aufgeloest.
 // Frei anpassbar: Zeilen sind einfach "Titel Interpret".
