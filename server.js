@@ -1168,20 +1168,20 @@ let poolByMood = {};
 let poolMeta = { ts: 0, total: 0, dropped: 0, error: null, loading: false };
 
 async function fetchPlaylistTracks() {
-  const fields = "next,items(is_local,track(id,uri,name,is_playable,album(release_date,images),artists(id,name)))";
-  let url = `https://api.spotify.com/v1/playlists/${SPOTIFY_PLAYLIST_ID}/tracks?` +
+  // Spotify hat GET /playlists/{id}/tracks im Feb-2026 Dev-Mode-Umbau auf
+  // /playlists/{id}/items umbenannt; "track" pro Eintrag heisst jetzt "item".
+  // Nur fuer Playlists verfuegbar, bei denen der User Owner/Collaborator ist.
+  const fields = "next,items(is_local,item(id,uri,name,is_playable,album(release_date,images),artists(id,name)))";
+  let url = `https://api.spotify.com/v1/playlists/${SPOTIFY_PLAYLIST_ID}/items?` +
     new URLSearchParams({ limit: "100", market: MARKET, fields });
   const out = [];
   let dropped = 0;
   while (url) {
-    // App-Token (client_credentials) wird von Spotify fuer fremde/kollaborative
-    // Playlists in Development Mode oft mit 403 abgewiesen. Der DJ-User-Token
-    // (bereits fuer Playback im Einsatz) funktioniert zuverlaessig.
     const r = await djFetch(url.replace("https://api.spotify.com/v1", ""));
     if (!r.ok) throw new Error(`playlist ${r.status}: ${(await r.text()).slice(0, 160)}`);
     const d = await r.json();
     for (const it of d.items || []) {
-      const t = it?.track;
+      const t = it?.item;
       // Lokale Dateien und im Markt nicht verfuegbare Tracks kann Spotify nicht abspielen.
       if (!t?.id || !t?.uri || it.is_local || t.is_playable === false) { dropped++; continue; }
       const rd = t.album?.release_date;
