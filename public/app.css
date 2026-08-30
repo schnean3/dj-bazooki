@@ -89,7 +89,7 @@ input::placeholder{ color:var(--dim); opacity:.75; }
 .toast{ position:fixed; left:50%; bottom:26px; transform:translateX(-50%); background:var(--ink); color:#F6F2EA; font-weight:500; font-size:14px; padding:11px 18px; border-radius:999px; box-shadow:0 12px 30px -12px #000; z-index:50; max-width:90%; text-align:center; animation:pop .2s ease; }
 
 .overlay{ position:fixed; inset:0; background:#2b241bcc; display:grid; place-items:center; z-index:60; padding:20px; }
-.modal{ background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:20px; width:100%; max-width:420px; box-shadow:0 20px 60px -20px #000; }
+.modal{ position:relative; background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:20px; width:100%; max-width:420px; box-shadow:0 20px 60px -20px #000; }
 .chips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
 .chip{ border:1px solid var(--border); border-radius:999px; padding:8px 12px; font-size:13px; font-weight:600; cursor:pointer; background:var(--surface2); color:var(--ink); }
 

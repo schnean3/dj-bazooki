@@ -176,6 +176,11 @@
         root.append(el("div", { class: "overlay" }, modal));
       }
       modal.innerHTML = "";
+      modal.append(el("button", {
+        class: "btn ghost", title: "Schliessen",
+        style: "position:absolute;top:10px;right:10px;width:32px;height:32px;padding:0;line-height:1;border-radius:50%",
+        onclick: () => closeVoteModal(),
+      }, "✕"));
       const countEl = el("div", { class: "muted eyebrow", style: "font-family:var(--display);font-weight:500;font-variant-numeric:tabular-nums;font-size:44px;line-height:1;color:var(--ink);margin:6px 0 2px;text-align:center" },
         v.closesAt != null ? fmtCount(v.closesAt - Date.now()) : "…");
       modal.append(
@@ -209,6 +214,16 @@
           if (rem <= 0) clearInterval(voteState.tickTimer);
         }, 1000);
       }
+    }
+
+    // Gast schliesst das laufende Voting-Popup selbst (ohne abzustimmen).
+    // Kommt zwingend zurueck, sobald der Server die Runde schliesst (Ergebnis) -
+    // gleiches Verhalten wie das automatische Ausblenden nach dem eigenen Vote.
+    function closeVoteModal() {
+      clearInterval(voteState.tickTimer);
+      voteState.dismissed = true;
+      const root = $("modal-root");
+      if (root) root.innerHTML = "";
     }
 
     async function castVote(i) {
