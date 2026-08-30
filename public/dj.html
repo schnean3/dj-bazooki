@@ -10,7 +10,10 @@
   <div class="wrap">
     <div class="head">
       <div class="eyebrow" style="color:var(--gold)">DJ-Pult · C + D</div>
-      <button id="logout" class="btn ghost" style="display:none">abmelden</button>
+      <div style="display:none;align-items:center;gap:10px" id="account-bar">
+        <span id="account-name" class="muted" style="font-size:13px"></span>
+        <button id="logout" class="btn ghost">abmelden</button>
+      </div>
     </div>
 
     <!-- Login-Gate -->
@@ -213,8 +216,9 @@
 
     async function refresh() {
       const { data: auth } = await api("/api/auth-status");
-      if (!auth.loggedIn) { $("gate").style.display = ""; $("console").style.display = "none"; $("logout").style.display = "none"; return; }
-      $("gate").style.display = "none"; $("console").style.display = ""; $("logout").style.display = "";
+      if (!auth.loggedIn) { $("gate").style.display = ""; $("console").style.display = "none"; $("account-bar").style.display = "none"; return; }
+      $("gate").style.display = "none"; $("console").style.display = ""; $("account-bar").style.display = "flex";
+      $("account-name").textContent = auth.displayName || "";
 
       const { data } = await api("/api/state");
       renderCurrentDirection($("current-dir"), data.committedDirection);
