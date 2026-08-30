@@ -67,7 +67,7 @@ const MOOD_NAMES = [M_PARTY, M_LATINO, M_URBAN, M_ROCK, M_HEIMAT];
 // Latino der Salsa-/Bachata-/Latin-Pop-Topf (Despacito, Bailando, Vivir Mi Vida) und
 // Bad Bunny, Karol G, Daddy Yankee & Co. laufen im Urban-Topf.
 // Auf false setzen, wenn Reggaeton doch bei Latino bleiben soll – sonst nichts aendern.
-const REGGAETON_URBAN = true;
+const REGGAETON_URBAN = false;
 const M_REGGAETON = REGGAETON_URBAN ? M_URBAN : M_LATINO;
 
 // Richtungen, aus denen NICHT automatisch nachgeschoben wird.
@@ -115,7 +115,9 @@ const MOOD_POOL = {
  * Alles gecacht pro Track. Wirft nie – im Zweifel Party-Charts.
  * Die Listen unten sind bewusst leicht editierbar.
  * ========================================================================== */
-const norm = (s) => (s || "").toString().toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").trim();
+// Entfernt neben Akzenten auch Apostrophe/Anführungszeichen (', ', ‘, "), sonst
+// verfehlt z. B. "Guns N' Roses" den Listen-Eintrag "guns n roses".
+const norm = (s) => (s || "").toString().toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/['’‘"]/g, "").trim();
 
 // Interpreten mit eindeutiger Zuordnung (Spotify-Genres sind hier oft leer/ungenau).
 const MUNDART_ARTISTS = new Set([
@@ -124,7 +126,7 @@ const MUNDART_ARTISTS = new Set([
   "stiller has","florian ast","stress","nemo","gotthard","zibbz","dabu fantastic","dabu fantastik",
   "marc sway","seven","pegasus","troubas kater","damian lynn",
   "polo hofer","stephan eicher","hanery amman","zuri west","lo & leduc",
-  "phenomden","lexx","open season","greis","baze","tinu heiniger",
+  "phenomden","lexx","open season","greis","baze","tinu heiniger","subzonic",
 ].map(norm));
 const SCHLAGER_ARTISTS = new Set([
   "helene fischer","andreas gabalier","dj otzi","udo jurgens","roland kaiser","beatrice egli",
@@ -257,6 +259,23 @@ const ARTIST_MOOD = new Map([
   ["sizzla",M_URBAN],["buju banton",M_URBAN],["elephant man",M_URBAN],
   ["collie buddz",M_URBAN],["protoje",M_URBAN],["alborosie",M_URBAN],
   ["jimmy cliff",M_URBAN],["ziggy marley",M_URBAN],["shabba ranks",M_URBAN],
+  // --- RnB/HipHop: Ergaenzungen aus dem Pool-Review vom 30.08.2026 (waren nicht ---
+  // gelistet, fielen mangels Spotify-Genres in Party-Charts durch) ---
+  ["nas",M_URBAN],["xzibit",M_URBAN],["busta rhymes",M_URBAN],["drake",M_URBAN],
+  ["eve",M_URBAN],["luniz",M_URBAN],["chamillionaire",M_URBAN],["krayzie bone",M_URBAN],
+  ["bone thugs-n-harmony",M_URBAN],["j boog",M_URBAN],
+  // Gorillaz laufen wegen der Rap-Features (De La Soul, Del the Funky Homosapien)
+  // bewusst unter RnB/HipHop statt Party-Charts (Entscheid Andy, 30.08.2026).
+  ["gorillaz",M_URBAN],["de la soul",M_URBAN],["del the funky homosapien",M_URBAN],
+  // --- Latino: Ergaenzungen ---
+  ["gipsy kings",M_LATINO],["lou bega",M_LATINO],
+  // --- Rock: Ergaenzungen ---
+  ["dire straits",M_ROCK],
+  // UK-Rock/Indie-Cluster (Entscheid Andy, 30.08.2026: alle nach Rock statt Party-Charts).
+  // Laengere/eindeutigere Namen zuerst gegen Kollisionen mit kurzen Fremdmatches.
+  ["the cure",M_ROCK],["radiohead",M_ROCK],["new order",M_ROCK],["the smiths",M_ROCK],
+  ["the verve",M_ROCK],["the housemartins",M_ROCK],["talking heads",M_ROCK],
+  ["depeche mode",M_ROCK],["snow patrol",M_ROCK],["ska-p",M_ROCK],
 ].map(([n, m]) => [norm(n), m]));
 
 // Genre-Schluesselwoerter -> Richtung. Erster Treffer in dieser Reihenfolge gewinnt.
