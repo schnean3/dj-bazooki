@@ -140,7 +140,23 @@ export function renderSwitchHint(container, ds, vibe, role) {
   const ch = ds.challenger && MOODS[ds.challenger] ? MOODS[ds.challenger] : null;
   const imminent = !!(ds.imminent && ch);
 
-  // Fall 1: Wechsel steht an - Aufholer liegt klar (1.5x) vorne, nur die Haltesperre bremst noch.
+  // Fall 0: Die Wechsel-Sequenz laeuft gerade - letztes Lied der alten Richtung,
+  // Voting offen, danach Horn + Lieblingslied.
+  if (ds.phase) {
+    const target = ch ? [el("span", { class: "to", style: `color:${ch.color}` }, `${ch.emoji} ${ds.challenger}`)]
+                      : [el("span", { class: "to", style: `color:${heldM.color}` }, `${heldM.emoji} ${held}`)];
+    const col = ch ? ch.color : heldM.color;
+    container.append(el("div", { class: "switch-hint pulse", style: `border-left-color:${col}` },
+      el("div", { class: "dot", style: `background:${col}` }),
+      el("div", { style: "min-width:0" },
+        el("div", { class: "st-title" }, "Letztes Lied dieser Richtung"),
+        el("div", { class: "st-main" },
+          el("span", { class: "muted" }, "Voting läuft · gleich Horn + Lieblingslied · dann "),
+          ...target))));
+    return;
+  }
+
+  // Fall 1: Am Blockende dreht die Richtung - eine andere Richtung fuehrt.
   if (imminent) {
     const soon = ds.etaMs != null && ds.etaMs <= 90000;
     const eta = fmtClock(ds.etaMs);
@@ -160,10 +176,11 @@ export function renderSwitchHint(container, ds, vibe, role) {
     return;
   }
 
-  // Fall 2: Ruhezustand - aktuelle Richtung, Restzeit der Haltesperre und wer aufholt.
+  // Fall 2: Ruhezustand - aktuelle Richtung, Restzeit des Blocks und wer aufholt.
+  // Ohne Herausforderer bleibt die Richtung stehen; Voting und Horn kommen trotzdem.
   const dwell = ds.dwellRemainingMs > 0
-    ? "Wechsel frühestens in " + fmtClock(ds.dwellRemainingMs)
-    : "Wechsel jederzeit möglich";
+    ? "Voting & Horn in " + fmtClock(ds.dwellRemainingMs)
+    : "Wechsel läuft gleich";
   const main = [
     el("span", { class: "to", style: `color:${heldM.color}` }, `${heldM.emoji} ${held}`),
     el("span", { class: "muted", style: "font-weight:500" }, ` · ${dwell}`),

@@ -154,15 +154,20 @@
         onclick: async () => { await api("/api/autoapprove", { method: "POST", body: JSON.stringify({ on: !onApprove }) }); refresh(); } },
         (onApprove ? "● " : "○ ") + "Auto-Freigabe " + (onApprove ? "an" : "aus"));
 
+      // Horn und Voting haengen beide am Ende des Musikrichtungs-Blocks. Der
+      // gemeinsame Countdown steht darum nur einmal, beim Voting-Knopf.
       var onHorn = !!data.hornEnabled;
       const hornToggle = el("button", { class: onHorn ? "btn gold" : "btn ghost", style: "font-size:12px;padding:6px 12px",
         onclick: async () => { await api("/api/horn", { method: "POST", body: JSON.stringify({ on: !onHorn }) }); refresh(); } },
-        (onHorn ? "● " : "○ ") + "Horn " + (onHorn ? "an" : "aus") + (onHorn && data.hornInMs != null ? " (" + mmss(data.hornInMs) + ")" : ""));
+        (onHorn ? "● " : "○ ") + "Horn " + (onHorn ? "an" : "aus"));
 
       var onVote = !!data.voteEnabled;
+      const voteCountdown = data.voteInMs != null ? mmss(data.voteInMs)
+        : (data.hornInMs != null ? mmss(data.hornInMs) : null);
       const voteToggle = el("button", { class: onVote ? "btn gold" : "btn ghost", style: "font-size:12px;padding:6px 12px",
         onclick: async () => { await api("/api/vote/toggle", { method: "POST", body: JSON.stringify({ on: !onVote }) }); refresh(); } },
-        (onVote ? "● " : "○ ") + "Voting " + (onVote ? "an" : "aus") + (onVote && data.voteInMs != null ? " (" + mmss(data.voteInMs) + ")" : ""));
+        (onVote ? "● " : "○ ") + "Voting " + (onVote ? "an" : "aus")
+        + (data.switchPhase ? " (läuft)" : (onVote && voteCountdown ? " (" + voteCountdown + ")" : "")));
 
       const poolReloadBtn = el("button", { class: "btn ghost", style: "font-size:12px;padding:6px 12px",
         onclick: async (ev) => {
