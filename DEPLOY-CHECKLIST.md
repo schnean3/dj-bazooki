@@ -134,18 +134,32 @@ Häufige Fehler:
 
 ---
 
-## 8c · Voting testen ("wer bestimmt den nächsten Song")
+## 8c · Wechsel-Sequenz testen (Voting → Horn → Lieblingslied → neue Richtung)
 
-1. `guests.csv` im Repo-Root pflegen (`name;titel;interpret`, mit Header-Zeile). Danach `POST /api/vote/unresolved` — pardon, **`GET /api/vote/unresolved`** (DJ eingeloggt, z. B. per Browser auf `https://dj-bazooki.onrender.com/api/vote/unresolved`) zeigt, welche Zeilen Spotify nicht finden konnte.
-2. Im DJ-Pult ist der Schalter **Voting an** (Standard = an). Läuft ein Song, startet automatisch alle `VOTE_INTERVAL_MIN` Minuten (Standard 20) eine Runde.
-3. Zum schnellen Testen `VOTE_INTERVAL_MIN=1` in den Render-Umgebungsvariablen setzen (temporär), Song abspielen, ~1 Min warten.
+Voting, Horn und Richtungswechsel hängen seit dem 30.08.2026 zusammen. Alle `DIRECTION_CYCLE_MIN` Minuten (Standard 30) läuft immer dieselbe Abfolge:
+
+| Schritt | Was passiert |
+|---|---|
+| 1 | Der laufende Song ist das **letzte Lied der alten Richtung**. Auf ihm startet das Voting. |
+| 2 | 1 Min vor Songende schliesst das Voting (ist der Song dafür zu kurz: 1 Min vor Ende des *nächsten* Songs — der ist dann das letzte Lied). |
+| 3 | **Horn** geht sofort in Spotifys Up-Next. |
+| 4 | Direkt dahinter das **Lieblingslied** des Gewinners (gepinnt). |
+| 5 | Erst jetzt dreht die **Richtung** — der Song danach kommt aus der neuen. |
+
+Solange das Voting auf dem laufenden Song hängt, schiebt der Auto-Advance bewusst nichts nach. Sonst stünde der nächste Song schon vor Horn und Lieblingslied in der Queue.
+
+1. `guests.csv` im Repo-Root pflegen (`name;titel;interpret`, mit Header-Zeile). Danach **`GET /api/vote/unresolved`** (DJ eingeloggt, z. B. per Browser auf `https://dj-bazooki.onrender.com/api/vote/unresolved`) zeigt, welche Zeilen Spotify nicht finden konnte.
+2. Im DJ-Pult stehen **Voting an** und **Horn an** (beide Standard = an). Der Countdown neben *Voting* zeigt, wann die Sequenz startet; während sie läuft, steht dort `(läuft)`.
+3. Zum schnellen Testen `DIRECTION_CYCLE_MIN=2` in den Render-Umgebungsvariablen setzen (temporär), Song abspielen, ~2 Min warten.
 4. Auf `/guest.html` sollte ein Pop-up mit 4 Namen erscheinen, Countdown läuft. Nach Antippen eines Namens ist der Vote gesperrt.
-5. Voting schliesst automatisch 1 Min vor Songende (oder — falls der Song dafür schon zu kurz ist — 1 Min vor Ende des nächsten Songs). Der Gewinnername erscheint kurz im Pop-up, danach verschwindet es von selbst.
-6. Der gewonnene Song landet ganz oben in der DJ-Queue (Badge nicht extra markiert, aber `pinned` — läuft als Nächstes, unabhängig von der aktuellen Richtung).
+5. Der Gewinnername erscheint kurz im Pop-up, danach verschwindet es von selbst.
+6. In Spotify läuft: alter Song → Horn → Lieblingslied des Gewinners → Song der neuen Richtung.
 
-**Prüfpunkt:** Nach einer geschlossenen Runde mit Stimmen steht ein neuer, ganz oben gepinnter Song in der Queue, und im DJ-Pult zeigt die Statuszeile den Namen des Gewinners.
+**Prüfpunkt:** Nach einer geschlossenen Runde mit Stimmen steht der gepinnte Gewinner-Song in der Queue, das Horn ist zu hören, und die Richtungsanzeige steht auf der neuen Richtung.
 
-Nicht vergessen: `VOTE_INTERVAL_MIN` nach dem Test wieder auf 20 (oder das gewünschte Intervall) zurücksetzen.
+Hat niemand abgestimmt, oder sind alle Gäste schon einmal Gewinner gewesen: Horn und Richtungswechsel laufen trotzdem, nur das Lieblingslied entfällt. Hat auch niemand eine neue Richtung gewählt, bleibt die alte stehen — der nächste Block läuft dann mit derselben Richtung weiter.
+
+Nicht vergessen: `DIRECTION_CYCLE_MIN` nach dem Test wieder auf 30 zurücksetzen.
 
 ---
 

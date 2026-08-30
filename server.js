@@ -28,11 +28,12 @@ const {
   // dann reicht der App-Token. Leer lassen => Auto-Fill-Pool bleibt leer (kein
   // Fallback mehr auf MOOD_POOL).
   SPOTIFY_PLAYLIST_ID = "7n18x8ELn4t0tKS1cbiksl",
-  // Horn/Tröte: URI des Effekts (Episode ODER Track) + Intervall in Minuten.
+  // Horn/Tröte: URI des Effekts (Episode ODER Track). Das Horn hat keinen eigenen
+  // Takt mehr — es läuft nur noch als Teil der Wechsel-Sequenz (siehe DIRECTION_CYCLE_MIN).
   HORN_URI = "spotify:episode:7i8ANZDp3UtjiGPJoKXP5f",
-  HORN_INTERVAL_MIN = 20,
-  // Gäste-Voting: alle VOTE_INTERVAL_MIN Minuten eine Runde "wer bestimmt den naechsten Song".
-  VOTE_INTERVAL_MIN = 20,
+  // Länge eines Musikrichtungs-Blocks in Minuten. An dessen Ende hängt die ganze
+  // Sequenz: Voting -> Horn -> Lieblingslied -> neue Richtung.
+  DIRECTION_CYCLE_MIN = 30,
 } = process.env;
 
 if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
@@ -77,8 +78,12 @@ const DIRECTION_TTL_MS = 30 * 60000; // Richtungswahl eines Gasts verfaellt 30 M
 const MIN_QUEUE = 2;                   // (Legacy) frueher: Nachschieb-Schwelle; jetzt via POOL_FLOOR
 
 // --- Autonomer DJ: Richtung stabil halten & Wunsch/Pool mischen ---
-const MIN_DWELL_MS = 20 * 60000; // Richtung wird mind. 20 Min gehalten, bevor sie wechseln darf
-const SWITCH_MARGIN = 1.5;       // Neue Richtung muss 1.5x staerker sein als die aktuelle, sonst kein Wechsel
+// Ein Musikrichtungs-Block dauert CYCLE_MS. Gewechselt wird NUR an dessen Ende,
+// und zwar als feste Sequenz (siehe "Wechsel-Sequenz" weiter unten):
+//   letztes Lied der alten Richtung (Voting laeuft) -> Horn -> Lieblingslied des
+//   Gewinners -> erstes Lied der neuen Richtung.
+const CYCLE_MS = Math.max(1, Number(DIRECTION_CYCLE_MIN) || 30) * 60000;
+const MIN_DWELL_MS = CYCLE_MS;   // Alias: der Block IST die Haltezeit der Richtung
 const POOL_FLOOR = 3;            // so viele kommende Pool-Songs immer bereithalten
 const WISH_EVERY = 3;            // 1 Gastwunsch je WISH_EVERY Songs -> Verhaeltnis Wunsch:Pool = 1:2
 // true  = Auto-Advance schickt IMMER die oberste Zeile der Queue (genau das, was der DJ sieht).
@@ -86,7 +91,8 @@ const WISH_EVERY = 3;            // 1 Gastwunsch je WISH_EVERY Songs -> Verhaelt
 const STRICT_QUEUE_ORDER = true;
 
 // --- Gaeste-Voting ("wer bestimmt den naechsten Song") ---
-const VOTE_INTERVAL_MS = Math.max(1, Number(VOTE_INTERVAL_MIN) || 20) * 60000;
+// Kein eigener Takt mehr: eine Runde startet ausschliesslich am Ende eines
+// Musikrichtungs-Blocks, auf dem dann letzten Lied der alten Richtung.
 const VOTE_CANDIDATES = 4;             // so viele Gaeste pro Runde zur Auswahl
 const VOTE_CLOSE_BEFORE_END_MS = 60000;  // Voting schliesst 1 Min vor Songende
 const VOTE_MIN_WINDOW_MS = 90000;        // unter diesem Fenster wird stattdessen ans naechste Songende gebunden
@@ -431,7 +437,12 @@ const DB_FILE = join(process.env.DATA_DIR || __dirname, "data.json");
 const emptyState = () => ({
   requests: [], nowPlaying: null, log: [], autoAdvance: true, autoFill: true, autoApprove: true,
   hornEnabled: true, directions: [], committedDirection: null,
-  voteEnabled: true, vote: null, voteWinners: [], nextVoteAt: Date.now() + VOTE_INTERVAL_MS,
+  voteEnabled: true, vote: null, voteWinners: [],
+  // Beginn des laufenden Musikrichtungs-Blocks. cycleSince + CYCLE_MS = Zeitpunkt,
+  // an dem die Wechsel-Sequenz startet.
+  cycleSince: Date.now(),
+  // Laufende Wechsel-Sequenz: { phase: "voting", startedAt } oder null.
+  switchSeq: null,
 });
 // Umbenennung der Richtungen (8 -> 5, 30.08.2026). Ein data.json aus der Zeit davor
 // enthaelt noch die alten Namen; ohne Umschluesselung wuerden die Wuensche als
@@ -457,6 +468,12 @@ let state = emptyState();
 try {
   if (existsSync(DB_FILE)) state = migrateMoods({ ...emptyState(), ...JSON.parse(readFileSync(DB_FILE, "utf8")) });
 } catch {}
+// Nach einem Neustart ist eine halb gelaufene Wechsel-Sequenz wertlos (das Lied, an
+// dem das Voting hing, ist laengst durch). Sequenz und offenes Voting verwerfen, den
+// Block neu anlaufen lassen.
+state.switchSeq = null;
+if (state.vote && !state.vote.closed) state.vote = null;
+if (!state.cycleSince) state.cycleSince = Date.now();
 let saveTimer = null;
 function persist() {
   clearTimeout(saveTimer);
@@ -475,10 +492,9 @@ const DIRECTION_FALLBACK_MS = 60000; // 1 Min: Deadline fuer Notfall-Ausweiche a
 let auto = { pushedForUri: null, slot: 0 };
 let playback = { is_playing: false, uri: null, title: null, artist: null, progress: 0, duration: 0, ts: 0 };
 
-// Horn: wird alle HORN_INTERVAL_MS in die Spotify-Queue gehaengt und laeuft
-// dann am naechsten Song-Uebergang. Kein Unterbrechen des laufenden Songs.
-const HORN_INTERVAL_MS = Math.max(1, Number(HORN_INTERVAL_MIN) || 20) * 60000;
-let horn = { lastTs: 0 };
+// Horn: hat keinen eigenen Takt mehr. Es wird genau einmal pro Musikrichtungs-Block
+// eingereiht, direkt bevor das Lieblingslied des Voting-Gewinners kommt.
+let horn = { lastTs: 0 }; // nur noch Protokoll: wann zuletzt eingereiht
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 const basicAuth = "Basic " + Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString("base64");
@@ -578,35 +594,48 @@ function nextOrder() {
 }
 
 /* --------------------- Autonome Richtungs-Steuerung --------------------- */
-// Legt die aktuelle Richtung fest und wechselt sie nur traege:
-// - erst nach MIN_DWELL_MS (20 Min) in der aktuellen Richtung
-// - und nur, wenn die neue Richtung klar (SWITCH_MARGIN = 1.5x) vorne liegt.
-// So dreht die Musik nicht nach jedem einzelnen Wunsch, sondern bleibt bei einer Stimmung.
+// Die Richtung laeuft in Bloecken von CYCLE_MS (30 Min). Waehrend eines Blocks
+// aendert sie sich NICHT, egal wie die Gaeste stimmen. Gewechselt wird nur am
+// Blockende, in applyDirectionSwitch() — als letzter Schritt der Wechsel-Sequenz.
+//
+// Diese Funktion legt darum nur noch die allererste Richtung fest (Abendbeginn,
+// sobald der erste Gast eine Richtung waehlt).
 function updateCommittedDirection() {
+  const cur = state.committedDirection;
+  if (cur && cur.mood) return;
   const vibe = computeVibe();
-  if (!vibe.dominant) return; // keine Signale -> Richtung unveraendert lassen
+  if (!vibe.dominant) return; // noch keine Signale -> weiter warten
+  const now = Date.now();
+  state.committedDirection = { mood: vibe.dominant, since: now };
+  state.cycleSince = now;     // der erste Block startet mit der ersten Richtung
+  persist();
+}
+
+// Wann endet der laufende Block (= wann startet die Wechsel-Sequenz)?
+function cycleDueAt() { return (state.cycleSince || 0) + CYCLE_MS; }
+function cycleRemainingMs() { return Math.max(0, cycleDueAt() - Date.now()); }
+
+// Letzter Schritt der Wechsel-Sequenz: Richtung auf die aktuell fuehrende Gaeste-Wahl
+// setzen und den naechsten Block starten. Hat niemand eine Richtung gewaehlt (oder
+// fuehrt die laufende selbst), bleibt sie stehen — der Block laeuft dann einfach
+// weiter mit derselben Richtung, Voting und Horn kamen trotzdem.
+// Gibt true zurueck, wenn sich die Richtung tatsaechlich geaendert hat.
+function applyDirectionSwitch() {
+  const vibe = computeVibe();
   const now = Date.now();
   const cur = state.committedDirection;
+  let changed = false;
 
-  if (!cur || !cur.mood) {                       // noch keine Richtung -> jetzt festlegen
+  if (vibe.dominant && (!cur || cur.mood !== vibe.dominant)) {
     state.committedDirection = { mood: vibe.dominant, since: now };
-    persist();
-    return;
+    state.directions = []; // Wechsel: Selektion wieder auf null, Gaeste waehlen neu
+    changed = true;
+  } else if (cur) {
+    cur.since = now;       // gleiche Richtung, neuer Block
   }
-  if (cur.mood === vibe.dominant) return;         // Fuehrende Richtung ist schon die aktuelle
-
-  const curRow = vibe.rows.find((r) => r.mood === cur.mood);
-  const curWeight = curRow ? curRow.weight : 0;
-  const challenger = vibe.rows.find((r) => r.mood !== cur.mood); // = dominante andere Richtung
-  if (!challenger) return;
-
-  const dwellOk = now - (cur.since || 0) >= MIN_DWELL_MS;
-  const clearlyAhead = challenger.weight >= curWeight * SWITCH_MARGIN;
-  if (dwellOk && clearlyAhead) {
-    state.committedDirection = { mood: challenger.mood, since: now };
-    state.directions = []; // Richtungswechsel: Selektion wieder auf null, Gaeste waehlen neu
-    persist();
-  }
+  state.cycleSince = now;
+  persist();
+  return changed;
 }
 
 // Aktuelle Richtung fuer Auto-Fill (fallback: Live-Vibe, sonst null).
@@ -614,46 +643,44 @@ function currentMood() {
   return state.committedDirection?.mood || computeVibe().dominant || null;
 }
 
-// Beschreibt, ob (und wann) ein Richtungswechsel bevorsteht — dieselbe Regel wie
-// updateCommittedDirection(): ein Herausforderer wechselt nur, wenn er >= SWITCH_MARGIN
-// vorne liegt UND die aktuelle Richtung schon MIN_DWELL_MS gehalten wurde. Das Frontend
-// zeigt genau diese Vorschau, ohne die Logik zu duplizieren.
-//   imminent = ein Wechsel ist vorgemerkt (Herausforderer klar vorne); nur die Verweil-
-//              sperre haelt ihn noch. etaMs = Restzeit dieser Sperre (0 = wechselt beim
-//              naechsten tick, in ~5 s). Alles nur eine Momentaufnahme: aendern sich die
-//              Wuensche, kann der vorgemerkte Wechsel auch wieder verschwinden.
+// Beschreibt, wann der naechste Richtungswechsel kommt und wohin er ginge — dieselbe
+// Regel wie applyDirectionSwitch(), damit das Frontend die Logik nicht dupliziert.
+//   etaMs / dwellRemainingMs = Restzeit des laufenden Blocks. Bei 0 startet die
+//              Wechsel-Sequenz (Voting -> Horn -> Lieblingslied -> neue Richtung).
+//   imminent = beim Wechsel wuerde die Richtung tatsaechlich drehen, weil eine andere
+//              Richtung fuehrt. Momentaufnahme: waehlen die Gaeste um, dreht es anders
+//              oder gar nicht.
+//   phase    = "voting", solange die Sequenz laeuft; sonst null.
 function directionSwitchInfo() {
   const vibe = computeVibe();
   const cur = state.committedDirection;
+  const remaining = cycleRemainingMs();
   const info = {
     current: cur?.mood || null,
     challenger: null,
     clearlyAhead: false,
     imminent: false,
-    dwellRemainingMs: 0,
+    dwellRemainingMs: remaining,
     heldSinceMs: 0,
-    etaMs: null,
+    etaMs: remaining,
     curWeight: 0,
     challengerWeight: 0,
+    cycleMs: CYCLE_MS,
+    phase: state.switchSeq?.phase || null,
   };
   if (!cur || !cur.mood) return info;
 
-  info.dwellRemainingMs = Math.max(0, (cur.since || 0) + MIN_DWELL_MS - Date.now());
   info.heldSinceMs = Math.max(0, Date.now() - (cur.since || Date.now()));
   const curRow = vibe.rows.find((r) => r.mood === cur.mood);
   info.curWeight = curRow ? curRow.weight : 0;
 
-  // Staerkste ANDERE Richtung = der Aufholer. Immer ermitteln, auch wenn die
-  // aktuelle Richtung selbst fuehrt (dann ist es einfach der Zweitplatzierte).
+  // Staerkste ANDERE Richtung. Fuehrt sie, wird am Blockende auf sie gewechselt.
   const challenger = vibe.rows.find((r) => r.mood !== cur.mood);
   if (challenger && challenger.weight > 0) {
     info.challenger = challenger.mood;
     info.challengerWeight = challenger.weight;
-    info.clearlyAhead = challenger.weight >= info.curWeight * SWITCH_MARGIN;
-    if (info.clearlyAhead) {
-      info.imminent = true;
-      info.etaMs = info.dwellRemainingMs; // nur noch die Verweilsperre bremst den Wechsel
-    }
+    info.clearlyAhead = challenger.mood === vibe.dominant;
+    info.imminent = info.clearlyAhead;
   }
   return info;
 }
@@ -851,9 +878,11 @@ app.get("/api/state", (req, res) => {
     autoFill: state.autoFill,
     autoApprove: state.autoApprove,
     hornEnabled: !!state.hornEnabled,
-    hornInMs: state.hornEnabled ? Math.max(0, HORN_INTERVAL_MS - (Date.now() - horn.lastTs)) : null,
+    // Horn und Voting haengen beide am Blockende -> derselbe Countdown.
+    hornInMs: (state.hornEnabled && !state.switchSeq) ? cycleRemainingMs() : null,
     voteEnabled: !!state.voteEnabled,
-    voteInMs: (state.voteEnabled && !state.vote) ? Math.max(0, state.nextVoteAt - Date.now()) : null,
+    voteInMs: (state.voteEnabled && !state.vote && !state.switchSeq) ? cycleRemainingMs() : null,
+    switchPhase: state.switchSeq?.phase || null,
     vote: voteForClient(req.query.guestId),
     playback,
     vibe: computeVibe(),
@@ -896,10 +925,10 @@ app.post("/api/autoapprove", djOnly, (req, res) => {
   res.json({ ok: true, autoApprove: state.autoApprove });
 });
 
-// Horn an/aus. Beim Einschalten den Timer neu starten -> erstes Horn erst in HORN_INTERVAL.
+// Horn an/aus. Kein eigener Timer mehr — das Horn kommt einmal pro Musikrichtungs-
+// Block, direkt vor dem Lieblingslied des Voting-Gewinners.
 app.post("/api/horn", djOnly, (req, res) => {
   state.hornEnabled = !!req.body?.on;
-  if (state.hornEnabled) horn.lastTs = Date.now();
   persist();
   res.json({ ok: true, hornEnabled: state.hornEnabled });
 });
@@ -1470,14 +1499,43 @@ function remainingPlaybackMs() {
   return playback.duration > 0 ? Math.max(0, playback.duration - playback.progress) : null;
 }
 
-// Startet eine neue Runde, sofern Voting an ist, kein Voting laeuft, faellig ist,
-// Musik laeuft -- und genug Gaeste uebrig sind, die noch nicht gewonnen haben.
-async function maybeStartVote() {
-  if (!state.voteEnabled || state.vote || Date.now() < state.nextVoteAt) return;
+/* -------------------------- Wechsel-Sequenz --------------------------------
+ * Am Ende jedes Musikrichtungs-Blocks (alle CYCLE_MS) laeuft immer dieselbe
+ * Abfolge, damit der Richtungswechsel hoerbar inszeniert ist:
+ *
+ *   1. Der gerade laufende Song ist das LETZTE Lied der alten Richtung.
+ *      Auf ihm startet das Voting ("wer bestimmt den naechsten Song").
+ *   2. Eine Minute vor dessen Ende schliesst das Voting.
+ *   3. Sofort danach: Horn in Spotifys Up-Next.
+ *   4. Direkt dahinter das Lieblingslied des Gewinners (Pin ganz oben).
+ *   5. Erst jetzt dreht die Richtung — der Song NACH dem Lieblingslied kommt
+ *      also schon aus der neuen Richtung.
+ *
+ * Solange das Voting auf dem laufenden Song haengt, schiebt der Auto-Advance
+ * nichts nach (siehe tick()). Sonst waere der naechste Song schon in Spotifys
+ * Queue, bevor Horn und Lieblingslied ueberhaupt eingereiht sind.
+ * ------------------------------------------------------------------------- */
+
+// Startet die Sequenz, sobald der Block abgelaufen ist und Musik laeuft.
+async function maybeStartSwitchSequence() {
+  if (state.switchSeq || state.vote) return;
+  if (Date.now() < cycleDueAt()) return;
   if (!dj.access || !playback.is_playing || !(playback.duration > 0)) return;
+
+  state.switchSeq = { phase: "voting", startedAt: Date.now() };
+  persist();
+
+  const started = state.voteEnabled ? await startVoteRound() : false;
+  // Kein Voting moeglich (aus, oder zu wenige Gaeste uebrig): Sequenz sofort
+  // abschliessen — Horn kommt trotzdem, danach die neue Richtung.
+  if (!started) await finishSwitchSequence(null);
+}
+
+// Oeffnet die Voting-Runde auf dem laufenden Song. false = ging nicht.
+async function startVoteRound() {
   await loadGuests();
   const pool = guests.filter((g) => g.resolved && !state.voteWinners.includes(g.name));
-  if (pool.length < VOTE_CANDIDATES) { state.nextVoteAt = Date.now() + 60000; return; } // still pausieren, in 1 Min erneut pruefen
+  if (pool.length < VOTE_CANDIDATES) return false; // alle Gaeste schon durch
 
   const names = shuffle(pool).slice(0, VOTE_CANDIDATES).map((g) => g.name);
   const remaining = remainingPlaybackMs();
@@ -1489,13 +1547,17 @@ async function maybeStartVote() {
     votes: {},              // guestId -> Kandidaten-Index (0..3)
     openedAt: Date.now(),
     openUri: playback.uri,
+    // Ist vom laufenden Song zu wenig uebrig, wird der NAECHSTE Song das letzte
+    // Lied der alten Richtung — die Schliesszeit traegt maybeBindVote() nach.
     boundToNextSong: !bigEnough,
+    boundUri: bigEnough ? playback.uri : null,
     closesAt: bigEnough ? Date.now() + (remaining - VOTE_CLOSE_BEFORE_END_MS) : null,
     closed: false,
     winnerName: null,
     clearAt: null,
   };
   persist();
+  return true;
 }
 
 // Ist eine Runde ans naechste Songende gebunden (aktueller Song war schon zu kurz),
@@ -1507,7 +1569,15 @@ function maybeBindVote() {
   const remaining = remainingPlaybackMs();
   if (remaining == null) return;
   v.closesAt = Date.now() + Math.max(VOTE_CLOSE_FLOOR_MS, remaining - VOTE_CLOSE_BEFORE_END_MS);
+  v.boundUri = playback.uri; // ab jetzt haelt der Auto-Advance auf diesem Song an
   persist();
+}
+
+// true, solange das Voting auf dem GERADE laufenden Song haengt. Dann darf der
+// Auto-Advance nicht nachschieben, sonst landet der naechste Song vor dem Horn.
+function switchSeqHoldsQueue() {
+  const v = state.vote;
+  return !!(state.switchSeq?.phase === "voting" && v && !v.closed && v.boundUri && playback.uri === v.boundUri);
 }
 
 function pickVoteWinnerIndex(v) {
@@ -1527,11 +1597,23 @@ async function maybeCloseVote() {
   const winIdx = pickVoteWinnerIndex(v);
   v.closed = true;
   v.clearAt = Date.now() + VOTE_RESULT_DISPLAY_MS;
-  state.nextVoteAt = Date.now() + VOTE_INTERVAL_MS;
+  v.winnerName = winIdx != null ? v.names[winIdx] : null;
+  persist();
 
-  if (winIdx != null) {
-    const winnerName = v.names[winIdx];
-    v.winnerName = winnerName;
+  await finishSwitchSequence(v.winnerName);
+}
+
+// Schritte 3-5 der Sequenz: Horn, Lieblingslied, Richtungswechsel. Die Reihenfolge
+// ist wichtig — das Horn muss VOR dem Lieblingslied in Spotifys Queue liegen.
+async function finishSwitchSequence(winnerName) {
+  // 3. Horn zuerst einreihen. Es laeuft am naechsten Songuebergang, unterbricht nichts.
+  if (state.hornEnabled) {
+    if (await queueHorn()) horn.lastTs = Date.now();
+  }
+
+  // 4. Lieblingslied des Gewinners ganz oben in unsere Queue. Der Auto-Advance
+  //    schiebt es beim naechsten Tick nach — also nach dem Horn.
+  if (winnerName) {
     const guest = guests.find((g) => g.name === winnerName && g.resolved);
     if (guest) {
       await pinToTop({ uri: guest.uri, trackId: guest.trackId, title: guest.title, artist: guest.artist, image: guest.image },
@@ -1539,6 +1621,10 @@ async function maybeCloseVote() {
       state.voteWinners = [...(state.voteWinners || []), winnerName];
     }
   }
+
+  // 5. Jetzt erst die Richtung drehen und den naechsten Block starten.
+  applyDirectionSwitch();
+  state.switchSeq = null;
   persist();
 }
 
@@ -1553,9 +1639,6 @@ async function tick() {
   try { updateCommittedDirection(); } catch {}
   try { await loadPool(); } catch {}   // laedt nur, wenn PLAYLIST_REFRESH_MS um ist
   try { await autoFillMaybe(); } catch {}
-  try { await maybeStartVote(); } catch (e) { console.error("vote start", e.message); }
-  try { maybeBindVote(); } catch {}
-  try { await maybeCloseVote(); } catch (e) { console.error("vote close", e.message); }
   try { maybeClearVote(); } catch {}
   if (!dj.access) return;
   let cur;
@@ -1590,14 +1673,17 @@ async function tick() {
     }
   }
 
-  // Horn: alle HORN_INTERVAL_MS einmal in die Queue haengen (nur waehrend Musik laeuft).
-  // Laeuft am naechsten Song-Uebergang, unterbricht nichts.
-  if (state.hornEnabled && playback.is_playing && Date.now() - horn.lastTs >= HORN_INTERVAL_MS) {
-    if (await queueHorn()) horn.lastTs = Date.now();
-  }
+  // Wechsel-Sequenz: hier, mit frischen Playback-Daten. Startet am Blockende auf
+  // dem laufenden Song, schliesst 1 Min vor dessen Ende und haengt dann Horn +
+  // Lieblingslied ein. Das Horn hat keinen eigenen Takt mehr.
+  try { await maybeStartSwitchSequence(); } catch (e) { console.error("switch start", e.message); }
+  try { maybeBindVote(); } catch {}
+  try { await maybeCloseVote(); } catch (e) { console.error("vote close", e.message); }
 
-  // Nachschieben, wenn der aktuelle Song fast fertig ist.
-  if (state.autoAdvance && playback.is_playing && playback.duration > 0) {
+  // Nachschieben, wenn der aktuelle Song fast fertig ist. Waehrend das Voting auf
+  // genau diesem Song laeuft, bewusst nicht: sonst steht der naechste Song schon
+  // vor Horn und Lieblingslied in Spotifys Queue.
+  if (state.autoAdvance && !switchSeqHoldsQueue() && playback.is_playing && playback.duration > 0) {
     const remaining = playback.duration - playback.progress;
     if (remaining <= DIRECTION_FALLBACK_MS && auto.pushedForUri !== uri) {
       const pick = pickNextForQueue(remaining);
