@@ -1,14 +1,11 @@
 // Gemeinsame Helfer fuer Gaeste- und DJ-Seite.
 
 export const MOODS = {
-  "Party-Charts":     { color: "#C2A15A", emoji: "🎉" },
-  "Latino":           { color: "#C98A5E", emoji: "💃" },
-  "Schlager":         { color: "#C08E6A", emoji: "🥂" },
-  "Rock":             { color: "#B5726A", emoji: "🎸" },
-  "HipHop/Dancehall": { color: "#A08AA6", emoji: "🎤" },
-  "House/EDM":        { color: "#7FA6A2", emoji: "🔊" },
-  "Slow/Love":        { color: "#D3A9B4", emoji: "💍" },
-  "Mundart":          { color: "#93A17C", emoji: "🇨🇭" },
+  "Party-Charts":             { color: "#C2A15A", emoji: "🎉" },
+  "Latino":                   { color: "#C98A5E", emoji: "💃" },
+  "RnB, Hip-Hop & Reggaeton": { color: "#A08AA6", emoji: "🎤" },
+  "Punk, Rock & UK Grunge":   { color: "#B5726A", emoji: "🎸" },
+  "Mundart & Schlager":       { color: "#93A17C", emoji: "🇨🇭" },
 };
 
 // Anzahl Likes (Herzen). Muss zur Serverlogik in queueSort passen.
