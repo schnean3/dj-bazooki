@@ -75,7 +75,7 @@ export function renderVibe(container, vibe, big) {
   container.className = "vibe" + (big ? " big" : "");
   container.innerHTML = "";
   const dom = vibe.dominant;
-  const domColor = dom ? MOODS[dom].color : "var(--dim)";
+  const domColor = dom ? (MOODS[dom]?.color || "var(--dim)") : "var(--dim)";
   container.style.boxShadow = dom ? `0 0 50px -22px ${domColor}` : "none";
 
   const eq = el("div", { class: "eq" });
@@ -85,15 +85,15 @@ export function renderVibe(container, vibe, big) {
     el("div", { style: "display:flex;align-items:center;gap:12px;margin-bottom:4px" },
       el("span", { class: "eyebrow muted" }, "Stimmung auf der Tanzfläche"), dom ? eq : null),
     dom
-      ? el("div", { class: "dom" }, el("span", {}, MOODS[dom].emoji), el("span", { style: `color:${domColor}` }, dom))
+      ? el("div", { class: "dom" }, el("span", {}, MOODS[dom]?.emoji || "🎵"), el("span", { style: `color:${domColor}` }, dom))
       : el("div", { class: "muted", style: "margin:10px 0 16px;font-size:16px" }, "Noch keine Wünsche. Sobald etwas reinkommt, zeigt sich hier die Richtung.")
   );
 
   for (const r of vibe.rows) {
     container.append(
       el("div", { class: "bar-row" },
-        el("div", { class: "bar-label" }, `${MOODS[r.mood].emoji} ${r.mood}`),
-        el("div", { class: "bar-track" }, el("div", { class: "bar-fill", style: `width:${Math.max(6, r.pct * 100)}%;background:${MOODS[r.mood].color}` })),
+        el("div", { class: "bar-label" }, `${MOODS[r.mood]?.emoji || "🎵"} ${r.mood}`),
+        el("div", { class: "bar-track" }, el("div", { class: "bar-fill", style: `width:${Math.max(6, r.pct * 100)}%;background:${MOODS[r.mood]?.color || "var(--border)"}` })),
         el("div", { class: "muted", style: "width:34px;text-align:right;font-size:12px" }, Math.round(r.pct * 100) + "%"))
     );
   }
@@ -105,7 +105,7 @@ export function renderNow(container, np) {
   const art = np?.image
     ? el("div", { class: "art has-image", style: `background-image:url('${np.image}')` })
     : el("div", { class: "art" }, np ? MOODS[np.mood]?.emoji || "🎵" : "🎧");
-  if (np?.mood && !np?.image) art.style.background = MOODS[np.mood].color + "22";
+  if (np?.mood && !np?.image && MOODS[np.mood]) art.style.background = MOODS[np.mood].color + "22";
   container.append(art,
     el("div", { class: "now-info", style: "min-width:0" },
       el("div", { class: "eyebrow", style: "color:var(--gold);margin-bottom:3px" }, "Läuft gerade"),
