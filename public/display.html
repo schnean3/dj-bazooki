@@ -211,10 +211,14 @@ function renderHero(np, playback, requests) {
   }
 }
 
-function renderUpNext(requests, nowId) {
+// curMood = die Richtung, die gerade laeuft. Wuensche aus einer anderen Richtung
+// warten auf ihre Richtung und werden hier NICHT gezeigt (gleiche Logik wie die
+// "wartet"-Liste in guest.html und das "wartet"-Badge in dj.html).
+function renderUpNext(requests, nowId, curMood) {
   const host = document.getElementById("upnext");
   host.innerHTML = "";
-  const queue = requests.filter((r) => r.status === "queued" && r.id !== nowId && !r.pool).sort(queueSort).slice(0, 5);
+  const onDirection = (r) => r.dj || r.auto || !curMood || r.mood === curMood;
+  const queue = requests.filter((r) => r.status === "queued" && r.id !== nowId && !r.pool && onDirection(r)).sort(queueSort).slice(0, 5);
   if (!queue.length) { host.append(el("div", { class: "empty" }, "Noch nichts in der Warteschlange.")); return; }
   queue.forEach((r, i) => {
     const m = MOODS[r.mood];
@@ -273,7 +277,7 @@ async function renderVote(data) {
 async function refresh() {
   const { data } = await api("/api/state");
   renderHero(data.nowPlaying, data.playback, data.requests);
-  renderUpNext(data.requests, data.nowPlaying?.id);
+  renderUpNext(data.requests, data.nowPlaying?.id, data.committedDirection?.mood || null);
   renderNextVote(data);
   await renderVote(data);
   renderCurrentDirection(document.getElementById("current-dir"), data.committedDirection);
