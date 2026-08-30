@@ -34,6 +34,12 @@ const {
   // Länge eines Musikrichtungs-Blocks in Minuten. An dessen Ende hängt die ganze
   // Sequenz: Voting -> Horn -> Lieblingslied -> neue Richtung.
   DIRECTION_CYCLE_MIN = 30,
+  // Mitternachtslied: läuft jede Nacht um 00:00 Ortszeit, quer zur laufenden
+  // Richtung. Leer lassen => ganz aus.
+  MIDNIGHT_URI = "spotify:track:12LkVK4F1Tq0bLtzl7wkpf",
+  // Zeitzone, nach der "Mitternacht" bestimmt wird. Der Server läuft auf Render
+  // in UTC, das Fest in der Schweiz — darum hier explizit.
+  MIDNIGHT_TZ = "Europe/Zurich",
 } = process.env;
 
 if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
@@ -85,6 +91,14 @@ const MIN_QUEUE = 2;                   // (Legacy) frueher: Nachschieb-Schwelle;
 const CYCLE_MS = Math.max(1, Number(DIRECTION_CYCLE_MIN) || 30) * 60000;
 const MIN_DWELL_MS = CYCLE_MS;   // Alias: der Block IST die Haltezeit der Richtung
 const POOL_FLOOR = 3;            // so viele kommende Pool-Songs immer bereithalten
+
+// --- Mitternachtslied ---------------------------------------------------------
+// Um 00:00 (MIDNIGHT_TZ) kommt Horn + das Mitternachtslied, unabhaengig von der
+// laufenden Richtung. Es unterbricht nichts: das Lied wird oben in unsere Queue
+// gepinnt und laeuft, sobald der aktuelle Song durch ist.
+const MIDNIGHT_WINDOW_MS = 15 * 60000; // so lange nach 00:00 wird noch nachgeholt (Pause, Neustart)
+const MIDNIGHT_GUARD_MS  = 5 * 60000;  // so lange VOR 00:00 startet keine Wechsel-Sequenz mehr
+const MIDNIGHT_HOLD_MAX_MS = 15 * 60000; // Notbremse: laeuft das gepinnte Lied nie an, wird der Takt trotzdem wieder freigegeben
 const WISH_EVERY = 3;            // 1 Gastwunsch je WISH_EVERY Songs -> Verhaeltnis Wunsch:Pool = 1:2
 // true  = Auto-Advance schickt IMMER die oberste Zeile der Queue (genau das, was der DJ sieht).
 // false = 1:2 Wunsch:Pool-Mischung wie bisher (Pool-Songs werden bewusst dazwischen gestreut).
@@ -443,6 +457,9 @@ const emptyState = () => ({
   cycleSince: Date.now(),
   // Laufende Wechsel-Sequenz: { phase: "voting", startedAt } oder null.
   switchSeq: null,
+  // Mitternachtslied: date = das lokale Datum, dessen 00:00 schon abgehandelt ist
+  // (verhindert Doppelstart im 15-Min-Fenster). phase: null | "queued" | "playing".
+  midnight: { date: null, phase: null, uri: null, id: null, queuedAt: 0 },
 });
 // Umbenennung der Richtungen (8 -> 5, 30.08.2026). Ein data.json aus der Zeit davor
 // enthaelt noch die alten Namen; ohne Umschluesselung wuerden die Wuensche als
@@ -474,6 +491,11 @@ try {
 state.switchSeq = null;
 if (state.vote && !state.vote.closed) state.vote = null;
 if (!state.cycleSince) state.cycleSince = Date.now();
+// Dasselbe fuers Mitternachtslied: die Phase ist nach einem Neustart nicht mehr
+// nachvollziehbar. `date` bleibt stehen, damit dieselbe Nacht nicht zweimal feuert;
+// ein schon gepinntes Lied liegt weiterhin als normaler Pin in der Queue.
+if (!state.midnight) state.midnight = { date: null, phase: null, uri: null, id: null };
+state.midnight.phase = null;
 let saveTimer = null;
 function persist() {
   clearTimeout(saveTimer);
@@ -667,6 +689,9 @@ function directionSwitchInfo() {
     challengerWeight: 0,
     cycleMs: CYCLE_MS,
     phase: state.switchSeq?.phase || null,
+    // Rund um 00:00 pausiert der Takt: erst das Mitternachtslied, dann geht der
+    // Block von vorne los. Ohne das zaehlte die Anzeige auf 0 und blieb stehen.
+    midnightHold: midnightHoldsCycle(),
   };
   if (!cur || !cur.mood) return info;
 
@@ -879,10 +904,11 @@ app.get("/api/state", (req, res) => {
     autoApprove: state.autoApprove,
     hornEnabled: !!state.hornEnabled,
     // Horn und Voting haengen beide am Blockende -> derselbe Countdown.
-    hornInMs: (state.hornEnabled && !state.switchSeq) ? cycleRemainingMs() : null,
+    hornInMs: (state.hornEnabled && !state.switchSeq && !midnightHoldsCycle()) ? cycleRemainingMs() : null,
     voteEnabled: !!state.voteEnabled,
-    voteInMs: (state.voteEnabled && !state.vote && !state.switchSeq) ? cycleRemainingMs() : null,
+    voteInMs: (state.voteEnabled && !state.vote && !state.switchSeq && !midnightHoldsCycle()) ? cycleRemainingMs() : null,
     switchPhase: state.switchSeq?.phase || null,
+    midnight: midnightForClient(),
     vote: voteForClient(req.query.guestId),
     playback,
     vibe: computeVibe(),
@@ -1499,6 +1525,138 @@ function remainingPlaybackMs() {
   return playback.duration > 0 ? Math.max(0, playback.duration - playback.progress) : null;
 }
 
+/* --------------------------- Mitternachtslied ------------------------------
+ * Um 00:00 Ortszeit (MIDNIGHT_TZ) laeuft ein festes Lied — unabhaengig davon,
+ * welche Richtung gerade dran ist. Ablauf, bewusst ohne Abbruch des laufenden
+ * Songs:
+ *
+ *   1. Um 00:00 geht das Horn in Spotifys Up-Next.
+ *   2. Direkt dahinter das Mitternachtslied (Pin ganz oben in unserer Queue).
+ *   3. Der Musikrichtungs-Block startet neu, damit Voting/Horn/Wechsel nicht
+ *      mitten in die Mitternacht fallen. Ab 5 Min vor 00:00 startet ohnehin
+ *      keine Wechsel-Sequenz mehr (MIDNIGHT_GUARD_MS).
+ *
+ * Bekannte Kante: hat der Auto-Advance den naechsten Pool-Song schon zu Spotify
+ * geschickt (das passiert bis zu 1 Min vor Songende), liegt der vor dem Horn —
+ * Spotifys Queue laesst sich nicht umsortieren. Das Lied kommt dann einen Song
+ * spaeter. Pausiert der DJ ueber Mitternacht, wird bis 15 Min nach 00:00
+ * nachgeholt (MIDNIGHT_WINDOW_MS), danach faellt es fuer diese Nacht aus.
+ * ------------------------------------------------------------------------- */
+
+// Ortszeit in MIDNIGHT_TZ, unabhaengig von der Serverzeitzone.
+const midnightFmt = new Intl.DateTimeFormat("en-CA", {
+  timeZone: MIDNIGHT_TZ, hourCycle: "h23",
+  year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", second: "2-digit",
+});
+function localNow(ts = Date.now()) {
+  const p = {};
+  for (const x of midnightFmt.formatToParts(new Date(ts))) if (x.type !== "literal") p[x.type] = x.value;
+  const msOfDay = ((+p.hour) * 3600 + (+p.minute) * 60 + (+p.second)) * 1000;
+  return { date: `${p.year}-${p.month}-${p.day}`, msOfDay, untilMidnightMs: 86400000 - msOfDay };
+}
+
+// Steht das Mitternachtslied fuer diese Nacht noch aus (Fenster 00:00 - 00:15)?
+function midnightDue() {
+  if (!MIDNIGHT_URI) return false;
+  const t = localNow();
+  return t.msOfDay < MIDNIGHT_WINDOW_MS && state.midnight?.date !== t.date;
+}
+
+// true = rund um Mitternacht keine Wechsel-Sequenz starten. Sonst laegen Voting,
+// Horn und Lieblingslied genau im Mitternachtslied.
+function midnightHoldsCycle() {
+  if (!MIDNIGHT_URI) return false;
+  if (state.midnight?.phase) return true;                 // eingereiht oder laeuft gerade
+  if (midnightDue()) return true;                         // steht noch aus
+  return localNow().untilMidnightMs <= MIDNIGHT_GUARD_MS; // kurz davor
+}
+
+let midnightTrack = null; // aufgeloest, sobald der Katalog einmal geantwortet hat
+async function loadMidnightTrack() {
+  if (!MIDNIGHT_URI) return null;
+  if (midnightTrack) return midnightTrack;
+  const id = String(MIDNIGHT_URI).split(":").pop();
+  try {
+    const token = await getAppToken();
+    const r = await fetch(`https://api.spotify.com/v1/tracks/${id}?market=${MARKET}`,
+      { headers: { Authorization: "Bearer " + token } });
+    if (r.ok) {
+      const t = await r.json();
+      midnightTrack = {
+        uri: t.uri || MIDNIGHT_URI, trackId: t.id || id, title: t.name || "Mitternachtslied",
+        artist: (t.artists || []).map((a) => a.name).join(", "), image: t.album?.images?.[0]?.url || null,
+      };
+      return midnightTrack;
+    }
+    await r.text().catch(() => {});
+  } catch {}
+  // Katalog nicht erreichbar: die URI allein reicht zum Abspielen. Nicht cachen,
+  // damit der naechste Versuch die echten Metadaten nachholt.
+  return { uri: MIDNIGHT_URI, trackId: id, title: "Mitternachtslied", artist: "", image: null };
+}
+
+async function maybeMidnightSong() {
+  if (!MIDNIGHT_URI) return;
+  const st = state.midnight || (state.midnight = { date: null, phase: null, uri: null, id: null });
+
+  // Phasen mitfuehren: eingereiht -> laeuft -> durch. Wenn es durch ist, faengt
+  // der Musikrichtungs-Block frisch an.
+  if (st.phase === "queued") {
+    const req = state.requests.find((r) => r.id === st.id);
+    if (st.uri && playback.uri === st.uri) {
+      st.phase = "playing";
+      persist();
+    } else if (!req || req.status !== "queued" || Date.now() - (st.queuedAt || 0) > MIDNIGHT_HOLD_MAX_MS) {
+      // Lied entfernt, uebersprungen oder es kam nie dran: Takt wieder freigeben,
+      // sonst stuende der Musikrichtungs-Block die ganze Nacht still.
+      st.phase = null;
+      state.cycleSince = Date.now();
+      persist();
+    }
+  } else if (st.phase === "playing" && playback.uri && playback.uri !== st.uri) {
+    st.phase = null;
+    state.cycleSince = Date.now();
+    persist();
+  }
+
+  if (!midnightDue()) return;
+  if (!dj.access || !playback.is_playing) return; // pausiert: im 15-Min-Fenster erneut versuchen
+
+  const track = await loadMidnightTrack();
+  if (!track?.uri) return;
+
+  const today = localNow().date;
+  // sofort setzen: kein zweiter Anlauf im naechsten Tick
+  st.date = today; st.phase = "queued"; st.uri = track.uri; st.queuedAt = Date.now();
+  persist();
+
+  // 1. Horn zuerst — Spotifys Queue ist FIFO, es muss vor dem Lied drin liegen.
+  if (state.hornEnabled) {
+    if (await queueHorn()) horn.lastTs = Date.now();
+  }
+  // 2. Das Lied ganz oben in unsere Queue. Als Pin laeuft es quer zur Richtung.
+  const req = await pinToTop(track, { addedBy: "Mitternacht", byId: "midnight", dj: true, midnight: true });
+  st.id = req.id;
+  // 3. Block neu starten, damit die Wechsel-Sequenz nicht direkt hinterherkommt.
+  state.cycleSince = Date.now();
+  persist();
+  console.log("Mitternachtslied eingereiht:", track.title);
+}
+
+// Fuer die Anzeige in Display- und DJ-View.
+function midnightForClient() {
+  if (!MIDNIGHT_URI) return null;
+  const t = localNow();
+  const st = state.midnight || {};
+  return {
+    title: midnightTrack?.title || null,
+    artist: midnightTrack?.artist || null,
+    phase: st.phase || null,          // "queued" = kommt gleich, "playing" = laeuft
+    inMs: st.phase ? null : t.untilMidnightMs,
+  };
+}
+
 /* -------------------------- Wechsel-Sequenz --------------------------------
  * Am Ende jedes Musikrichtungs-Blocks (alle CYCLE_MS) laeuft immer dieselbe
  * Abfolge, damit der Richtungswechsel hoerbar inszeniert ist:
@@ -1519,6 +1677,7 @@ function remainingPlaybackMs() {
 // Startet die Sequenz, sobald der Block abgelaufen ist und Musik laeuft.
 async function maybeStartSwitchSequence() {
   if (state.switchSeq || state.vote) return;
+  if (midnightHoldsCycle()) return; // rund um 00:00 hat das Mitternachtslied Vorrang
   if (Date.now() < cycleDueAt()) return;
   if (!dj.access || !playback.is_playing || !(playback.duration > 0)) return;
 
@@ -1676,6 +1835,9 @@ async function tick() {
   // Wechsel-Sequenz: hier, mit frischen Playback-Daten. Startet am Blockende auf
   // dem laufenden Song, schliesst 1 Min vor dessen Ende und haengt dann Horn +
   // Lieblingslied ein. Das Horn hat keinen eigenen Takt mehr.
+  // Mitternachtslied vor der Wechsel-Sequenz: es hat um 00:00 Vorrang und setzt
+  // den Block neu auf (siehe midnightHoldsCycle).
+  try { await maybeMidnightSong(); } catch (e) { console.error("mitternacht", e.message); }
   try { await maybeStartSwitchSequence(); } catch (e) { console.error("switch start", e.message); }
   try { maybeBindVote(); } catch {}
   try { await maybeCloseVote(); } catch (e) { console.error("vote close", e.message); }

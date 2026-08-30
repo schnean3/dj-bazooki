@@ -54,10 +54,11 @@ Im Service unter **Environment** eintragen:
 | `SPOTIFY_REDIRECT_URI` | `https://dj-bazooki.onrender.com/callback` |
 | `PUBLIC_URL` | `https://dj-bazooki.onrender.com` |
 | `MARKET` | `CH` |
+| `MIDNIGHT_TZ` | `Europe/Zurich` — **wichtig:** Render läuft in UTC, sonst käme das Mitternachtslied um 02:00 |
 
 Speichern löst einen neuen Deploy aus.
 
-**Prüfpunkt:** Alle fünf Variablen stehen da, keine Tippfehler, `https` überall, kein Schrägstrich am Ende der URL.
+**Prüfpunkt:** Alle sechs Variablen stehen da, keine Tippfehler, `https` überall, kein Schrägstrich am Ende der URL.
 
 ---
 
@@ -160,6 +161,23 @@ Solange das Voting auf dem laufenden Song hängt, schiebt der Auto-Advance bewus
 Hat niemand abgestimmt, oder sind alle Gäste schon einmal Gewinner gewesen: Horn und Richtungswechsel laufen trotzdem, nur das Lieblingslied entfällt. Hat auch niemand eine neue Richtung gewählt, bleibt die alte stehen — der nächste Block läuft dann mit derselben Richtung weiter.
 
 Nicht vergessen: `DIRECTION_CYCLE_MIN` nach dem Test wieder auf 30 zurücksetzen.
+
+---
+
+## 8d · Mitternachtslied testen
+
+Um 00:00 (`MIDNIGHT_TZ`, Standard `Europe/Zurich`) kommt **Horn → Mitternachtslied** (`MIDNIGHT_URI`, Standard „Blos e chlini Stadt" von Dieter Wiesmann) — egal, welche Richtung gerade läuft. Der laufende Song wird nicht abgebrochen: das Lied wird oben in die Queue gepinnt und läuft, sobald der aktuelle Song durch ist. Danach startet der Musikrichtungs-Block neu; ab 5 Min vor 00:00 beginnt keine Wechsel-Sequenz mehr.
+
+Testen, ohne bis Mitternacht zu warten: `MIDNIGHT_TZ` temporär auf eine Zone stellen, in der es gerade kurz nach Mitternacht ist (z. B. `Pacific/Kiritimati`, `Asia/Tokyo`, `Europe/Lisbon` — je nach Uhrzeit), Song abspielen, max. 5 Sek warten.
+
+1. Im Log steht `Mitternachtslied eingereiht: …`.
+2. Auf `/display.html` erscheint der Chip **🕛 Gleich zur Mitternacht: …**, in der DJ-Konsole dieselbe Zeile unter der Fortschrittsanzeige.
+3. In der DJ-Queue steht das Lied zuoberst mit dem Badge **🕛 Mitternacht**.
+4. In Spotify läuft: aktueller Song → Horn → Mitternachtslied → normal weiter in der laufenden Richtung.
+
+**Prüfpunkt:** Das Lied kommt genau einmal pro Nacht, auch wenn der Server um 00:05 neu startet. Danach `MIDNIGHT_TZ` wieder auf `Europe/Zurich` setzen.
+
+Bekannte Kanten: Hat der Auto-Advance den nächsten Pool-Song schon zu Spotify geschickt (das passiert bis zu 1 Min vor Songende), liegt der vor dem Horn — Spotifys Queue lässt sich nicht umsortieren, das Lied kommt dann einen Song später. Ist die Musik über Mitternacht pausiert, wird bis 00:15 nachgeholt, danach fällt es für diese Nacht aus.
 
 ---
 
