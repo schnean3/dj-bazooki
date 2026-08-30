@@ -75,7 +75,7 @@
   </div>
 
   <script type="module">
-    import { MOODS, api, el, renderVibe, renderNow, renderSwitchHint, renderCurrentDirection, toast, queueSort } from "/shared.js";
+    import { MOODS, api, el, renderVibe, renderNow, renderSwitchHint, renderCurrentDirection, midnightText, toast, queueSort } from "/shared.js";
     const $ = (id) => document.getElementById(id);
 
     $("logout").onclick = async () => { await api("/api/logout", { method: "POST" }); location.reload(); };
@@ -205,6 +205,10 @@
       bar.append(el("div", { style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" }, toggle, fillToggle, approveToggle, hornToggle, voteToggle, poolReloadBtn));
       bar.append(el("div", { style: "margin-top:6px" }, info));
 
+      // Mitternachtslied: Countdown ab 10 Min davor, danach "kommt gleich" / "läuft".
+      const mtxt = midnightText(data.midnight, 10 * 60000);
+      if (mtxt) bar.append(el("div", { style: "margin-top:4px;font-size:12.5px;color:var(--gold)" }, "🕛 " + mtxt));
+
       const v = data.vote;
       if (v) {
         let vt;
@@ -260,7 +264,8 @@
         const offDir = !r.dj && !r.auto && curMood && r.mood !== curMood;
         const title = el("div", { style: "display:flex;align-items:center;gap:8px" },
           el("span", { class: "truncate", style: "font-weight:600" }, r.title),
-          r.dj ? el("span", { class: "badge", style: "background:var(--rose)" }, "DJ") : null,
+          r.midnight ? el("span", { class: "badge", style: "background:var(--gold);color:#1b1b1b", title: "Mitternachtslied — läuft quer zur Richtung" }, "🕛 Mitternacht")
+            : r.dj ? el("span", { class: "badge", style: "background:var(--rose)" }, "DJ") : null,
           r.auto ? el("span", { class: "badge", style: `background:${MOODS[r.mood]?.color || "var(--border)"}` }, "auto") : null,
           offDir ? el("span", { class: "badge", style: "background:var(--border);color:var(--dim)", title: "Wartet, bis diese Richtung läuft" }, "⏳ wartet") : null,
           r.sent ? el("span", { class: "badge", style: "background:var(--border);color:var(--dim)" }, "gesendet") : null);

@@ -127,6 +127,17 @@ export function fmtClock(ms) {
   return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
 }
 
+// Text fuers Mitternachtslied (`m` = data.midnight vom Server). null = nichts zu zeigen.
+// `lead` = ab wann vorher der Countdown erscheint.
+export function midnightText(m, lead = 30 * 60000) {
+  if (!m) return null;
+  const name = m.title ? `„${m.title}“` : "das Mitternachtslied";
+  if (m.phase === "playing") return `Mitternacht — ${name} läuft`;
+  if (m.phase === "queued") return `Gleich zur Mitternacht: ${name}`;
+  if (m.inMs != null && m.inMs <= lead) return `Mitternachtslied in ${fmtClock(m.inMs)}`;
+  return null;
+}
+
 // Zeigt einen bevorstehenden Richtungswechsel an. `ds` = data.directionSwitch vom Server.
 // role "dj": zeigt zusaetzlich, wenn eine Richtung gegen die Live-Stimmung gehalten wird.
 // role "guest": nur der eigentliche bevorstehende Wechsel, dezent.
@@ -178,9 +189,13 @@ export function renderSwitchHint(container, ds, vibe, role) {
 
   // Fall 2: Ruhezustand - aktuelle Richtung, Restzeit des Blocks und wer aufholt.
   // Ohne Herausforderer bleibt die Richtung stehen; Voting und Horn kommen trotzdem.
-  const dwell = ds.dwellRemainingMs > 0
-    ? "Voting & Horn in " + fmtClock(ds.dwellRemainingMs)
-    : "Wechsel läuft gleich";
+  // Rund um Mitternacht pausiert der Takt — sonst zaehlte die Anzeige auf 0 und
+  // bliebe dort stehen, obwohl bewusst nichts passiert.
+  const dwell = ds.midnightHold
+    ? "Mitternachtslied hat Vorrang"
+    : (ds.dwellRemainingMs > 0
+        ? "Voting & Horn in " + fmtClock(ds.dwellRemainingMs)
+        : "Wechsel läuft gleich");
   const main = [
     el("span", { class: "to", style: `color:${heldM.color}` }, `${heldM.emoji} ${held}`),
     el("span", { class: "muted", style: "font-weight:500" }, ` · ${dwell}`),
