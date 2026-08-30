@@ -79,7 +79,7 @@ Deploy abwarten, bis der Service **Live** ist. Dann im Browser öffnen:
 - `https://dj-bazooki.onrender.com/api/state`
   → sollte JSON zeigen, das mit `{"loggedIn":false,...}` beginnt.
 - `https://dj-bazooki.onrender.com/guest.html`
-  → die Gästeseite mit „Caro & Daniel" erscheint.
+  → die Gästeseite mit „Caroline & Daniel" erscheint.
 
 **Prüfpunkt:** Beides lädt. Falls nicht: im Render-Dashboard unter **Logs** schauen.
 

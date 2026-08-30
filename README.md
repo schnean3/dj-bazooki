@@ -1,6 +1,6 @@
 # DJ BazooKI
 
-*Caro & Daniel · 5. September 2026*
+*Caroline & Daniel · 5. September 2026*
 
 Wunsch-DJ für die Hochzeit mit echter Spotify-Anbindung. Das Design ist an die Einladung angelehnt (Greige, Creme, Antik-Gold, Schreibschrift). Gäste wünschen sich Songs und geben Herzen, die Tanzfläche zeigt live die Stimmung, der DJ gibt jeden Wunsch frei, stellt die Queue zusammen und schiebt Songs in Spotify.
 
@@ -114,7 +114,7 @@ Auf der Standard-Umgebung wird `data.json` bei einem Redeploy zurückgesetzt. We
 
 ## Nächste sinnvolle Schritte
 
-- Auto-Fill-Songs anpassen: die kuratierten Listen stehen als `MOOD_POOL` oben in `server.js` (einfach „Titel Interpret"-Zeilen, werden per Suche aufgelöst). Hier lassen sich auch Lieblingslieder von Caro und Daniel ergänzen.
+- Auto-Fill-Songs anpassen: die kuratierten Listen stehen als `MOOD_POOL` oben in `server.js` (einfach „Titel Interpret"-Zeilen, werden per Suche aufgelöst). Hier lassen sich auch Lieblingslieder von Caroline und Daniel ergänzen.
 - Feinschliff Auto-Advance: bei leerer Queue am Songende einen Hinweis zeigen, Übergänge/Timing justieren.
 - Queue-Persistenz über einen Disk (siehe oben), falls über Neustarts hinweg wichtig.
 - Eigene Domain statt der `onrender.com`-Adresse, falls gewünscht.
