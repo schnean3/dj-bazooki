@@ -519,19 +519,25 @@ async function artistGenres(ids) {
 
 const moodCache = new Map(); // trackId -> Richtung
 const moodInfo = new Map();  // trackId -> { source, genres, tags } – nur fuer GET /api/pool
-async function classifyTrack(track) {
+// Klassifizierung mit vollem Befund. force=true umgeht saemtliche Caches – das
+// braucht GET /api/classify, sonst bekaeme man bei jeder Nachfrage die alte
+// Antwort zurueck und wuesste nicht, ob eine Aenderung ueberhaupt greift.
+async function classifyTrackDetailed(track, force = false) {
   const id = track?.trackId || track?.id;
-  if (!id) return M_PARTY;
-  if (MANUAL_MOOD[id]) { moodInfo.set(id, { source: "manual", genres: [], tags: [] }); return MANUAL_MOOD[id]; }
-  if (moodCache.has(id)) return moodCache.get(id);
+  const out = (o) => ({ trackId: id, title: track?.title || null, artist: artistName, genres, tags: extTags, catalogError, ...o });
+  let artistName = track?.artist || "";
+  let genres = [];
+  let extTags = [];
+  let catalogError = null;
+  if (!id) return out({ mood: M_PARTY, source: "fallback" });
+  if (MANUAL_MOOD[id]) return out({ mood: MANUAL_MOOD[id], source: "manual" });
 
   let year = track.year ?? null;
-  let artistName = track.artist || "";
   let artistIds = track.artistIds || null;
 
   // Kommt der Track aus der Playlist, sind Interpreten und Jahr schon dabei –
   // dann sparen wir uns den /v1/tracks-Aufruf komplett.
-  if (!artistIds?.length || year == null) {
+  if (force || !artistIds?.length || year == null) {
     try {
       const token = await getAppToken();
       const auth = { headers: { Authorization: "Bearer " + token } };
@@ -542,35 +548,44 @@ async function classifyTrack(track) {
         const rd = tr.album?.release_date;
         if (rd) year = parseInt(String(rd).slice(0, 4), 10) || null;
       }
-    } catch { /* Katalog nicht erreichbar -> mit dem klassifizieren, was wir haben */ }
+    } catch (e) { catalogError = e.message; /* -> mit dem klassifizieren, was wir haben */ }
   }
 
   // Genres ALLER Interpreten, nicht nur des ersten. Sonst landet "Taki Taki" ueber
   // DJ Snake in House/EDM und "Baby Boy" ueber Beyonce in HipHop, obwohl die
   // Feature-Gaeste die Richtung bestimmen. Die Reihenfolge in GENRE_RULES entscheidet
   // dann, welches der gefundenen Genres gewinnt.
-  let genres = [];
-  try { genres = await artistGenres((artistIds || []).slice(0, 5)); } catch {}
+  const ids = (artistIds || []).slice(0, 5);
+  if (force) for (const x of ids) artistGenreCache.delete(x);
+  try { genres = await artistGenres(ids); } catch {}
 
   // Kein reccobeatsFeatures() mehr an dieser Stelle: seit dem Wegfall von Slow/Love
   // fliessen die Audio-Features nicht mehr in die Zuordnung ein – der Aufruf kostete
   // beim Laden der Playlist nur einen HTTP-Request pro Track. Funktion bleibt, falls
   // wieder gebraucht.
-  let res = classifySignals({ genres, artistName });
+  let sig = classifySignals({ genres, artistName });
 
   // Spotify sagt gar nichts ueber die Interpreten: zweiten Katalog fragen, statt den
   // Track stumm in Party-Charts fallen zu lassen. Nur in genau diesem Fall – hat
   // Spotify Genres geliefert, ist das Ergebnis (auch Party-Charts) eine Aussage.
-  let extTags = [];
-  if (res.source === "fallback" && !genres.length) {
-    const names = (artistIds || []).map((x) => artistNameCache.get(x)).filter(Boolean);
-    extTags = await externalArtistTags(names.length ? names : String(artistName).split(",").map((s) => s.trim()));
-    if (extTags.length) res = classifySignals({ genres, artistName, extTags });
+  if (sig.source === "fallback" && !genres.length) {
+    const cached = ids.map((x) => artistNameCache.get(x)).filter(Boolean);
+    const names = cached.length ? cached : String(artistName).split(",").map((s) => s.trim());
+    if (force) for (const n of names) extTagCache.delete(norm(n));
+    extTags = await externalArtistTags(names);
+    if (extTags.length) sig = classifySignals({ genres, artistName, extTags });
   }
+  return out({ mood: sig.mood, source: sig.source });
+}
 
-  moodCache.set(id, res.mood);
-  moodInfo.set(id, { source: res.source, genres, tags: extTags });
-  return res.mood;
+async function classifyTrack(track) {
+  const id = track?.trackId || track?.id;
+  if (!id) return M_PARTY;
+  if (moodCache.has(id)) return moodCache.get(id);
+  const d = await classifyTrackDetailed(track);
+  moodCache.set(id, d.mood);
+  moodInfo.set(id, { source: d.source, genres: d.genres, tags: d.tags });
+  return d.mood;
 }
 
 /* ----------------------------- persistente State ----------------------------- */
@@ -1421,6 +1436,33 @@ app.get("/api/pool", (req, res) => {
   });
 });
 
+// Warum landet dieser Song in dieser Richtung? Nimmt Track-ID, spotify:track:-URI
+// oder open.spotify.com-Link. Umgeht alle Caches, fragt also frisch bei Spotify und
+// (falls Spotify nichts liefert) beim Zweitkatalog nach.
+//   GET /api/classify?q=spotify:track:xxxx
+app.get("/api/classify", djOnly, async (req, res) => {
+  const q = String(req.query.q || req.query.track || req.query.uri || "").trim();
+  const id = /^[A-Za-z0-9]{22}$/.test(q) ? q : (q.match(/track[:/]([A-Za-z0-9]{22})/) || [])[1];
+  if (!id) return res.status(400).json({ error: "Track-ID, spotify:track:-URI oder Spotify-Link angeben" });
+  try {
+    const d = await classifyTrackDetailed({ trackId: id }, true);
+    res.json({
+      ...d,
+      externalTags: EXTERNAL_TAGS,
+      lastfmKey: !!LASTFM_KEY,
+      // Was der Befund heisst:
+      //   genres   -> Spotify hatte Genres, eine GENRE_RULE hat gegriffen
+      //   tags     -> Spotify leer, der Zweitkatalog hat geliefert
+      //   fallback -> nirgends ein Signal, Party-Charts nur mangels Alternative
+      hint: d.source === "fallback"
+        ? (EXTERNAL_TAGS === "off" ? "Zweitkatalog ist aus (EXTERNAL_TAGS/LASTFM_KEY setzen)"
+          : d.tags.length ? "Tags gefunden, aber keine passt zu einer GENRE_RULE"
+          : "Auch der Zweitkatalog kennt den Interpreten nicht -> ARTIST_MOOD/MANUAL_MOOD")
+        : null,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Playlist sofort neu einlesen (z. B. nachdem Songs ergaenzt wurden).
 app.post("/api/pool/reload", djOnly, async (_req, res) => {
   moodCache.clear();
@@ -1429,11 +1471,26 @@ app.post("/api/pool/reload", djOnly, async (_req, res) => {
   // ein Reload es erneut versuchen. Echte Treffer bleiben gecacht.
   for (const [k, v] of extTagCache) if (!v.length) extTagCache.delete(k);
   await loadPool(true);
+
+  // Wichtig: die Richtung eines Wunsches wird beim Anlegen einmal berechnet und in
+  // data.json festgeschrieben. Nach einer Regeländerung behielten alte Wuensche
+  // sonst ewig ihre alte Richtung – genau der Fall "Song steht immer noch auf
+  // Party-Charts". Darum hier alle noch nicht gespielten Wuensche neu einstufen,
+  // aber nur die automatisch eingestuften: eine Hand-Korrektur des DJs bleibt.
+  let requeued = 0;
+  for (const r of state.requests) {
+    if (!r.autoMood || r.status === "played" || !r.trackId) continue;
+    const m = await classifyTrack({ trackId: r.trackId, uri: r.uri, title: r.title, artist: r.artist });
+    if (m !== r.mood) { r.mood = m; requeued++; }
+  }
+  if (requeued) persist();
+
   res.json({
     ok: !poolMeta.error,
     total: poolMeta.total,
     dropped: poolMeta.dropped,
     error: poolMeta.error,
+    requeued,
     byMood: Object.fromEntries(MOOD_NAMES.map((m) => [m, (poolByMood[m] || []).length])),
   });
 });
