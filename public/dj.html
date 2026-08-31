@@ -182,7 +182,8 @@
               toast("Pool laden fehlgeschlagen: " + r.error);
             } else {
               const parts = Object.keys(MOODS).map((m) => `${MOODS[m].emoji}${r.byMood?.[m] ?? 0}`).join(" ");
-              toast(`Pool geladen: ${r.total} Songs — ${parts}`);
+              const req = r.requeued ? ` · ${r.requeued} Wunsch${r.requeued === 1 ? "" : "e"} neu eingestuft` : "";
+              toast(`Pool geladen: ${r.total} Songs — ${parts}${req}`);
             }
           } catch (err) {
             toast("Pool laden fehlgeschlagen: " + (err?.message || err));
