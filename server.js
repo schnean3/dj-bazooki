@@ -54,8 +54,10 @@ const SCOPES = [
   "playlist-read-collaborative",
 ].join(" ");
 
-const HOUR = 14400000;
-const LIMIT = 10; // Wuensche pro Gast und Stunde
+const HOUR = 3600000;
+const LIMIT = 10;               // Wuensche pro Gast und Stunde
+const SONG_COOLDOWN_MS = 4 * HOUR;   // gleicher Song erst nach 4 Std wieder
+
 // --- Musikrichtungen (5, Stand 30.08.2026) ------------------------------------
 // Frueher 8 (mit House/EDM, Slow/Love, Schlager und Mundart getrennt). Zusammengelegt,
 // weil die Playlist "Hochzeit C&D" sich real auf diese fuenf Toepfe verteilt.
