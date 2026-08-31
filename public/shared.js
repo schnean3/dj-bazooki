@@ -141,7 +141,9 @@ export function midnightText(m, lead = 30 * 60000) {
 // Zeigt einen bevorstehenden Richtungswechsel an. `ds` = data.directionSwitch vom Server.
 // role "dj": zeigt zusaetzlich, wenn eine Richtung gegen die Live-Stimmung gehalten wird.
 // role "guest": nur der eigentliche bevorstehende Wechsel, dezent.
-export function renderSwitchHint(container, ds, vibe, role) {
+// showHorn: nur im DJ-Pult true - Horn ist ein Soundeffekt, kein Programmpunkt,
+// der Gaesten oder auf dem Display angekuendigt werden soll.
+export function renderSwitchHint(container, ds, vibe, role, showHorn = false) {
   container.innerHTML = "";
   // Sichtbar, sobald eine Richtung festgelegt ist - auch ohne klaren Fuehrer.
   if (!ds || !ds.current || !MOODS[ds.current]) { container.style.display = "none"; return; }
@@ -152,17 +154,18 @@ export function renderSwitchHint(container, ds, vibe, role) {
   const imminent = !!(ds.imminent && ch);
 
   // Fall 0: Die Wechsel-Sequenz laeuft gerade - letztes Lied der alten Richtung,
-  // Voting offen, danach Horn + Lieblingslied.
+  // Voting offen, danach Horn (nur DJ-Pult) + Lieblingslied.
   if (ds.phase) {
     const target = ch ? [el("span", { class: "to", style: `color:${ch.color}` }, `${ch.emoji} ${ds.challenger}`)]
                       : [el("span", { class: "to", style: `color:${heldM.color}` }, `${heldM.emoji} ${held}`)];
     const col = ch ? ch.color : heldM.color;
+    const lead = showHorn ? "Voting läuft · gleich Horn + Lieblingslied · dann " : "Voting läuft · gleich Lieblingslied · dann ";
     container.append(el("div", { class: "switch-hint pulse", style: `border-left-color:${col}` },
       el("div", { class: "dot", style: `background:${col}` }),
       el("div", { style: "min-width:0" },
         el("div", { class: "st-title" }, "Letztes Lied dieser Richtung"),
         el("div", { class: "st-main" },
-          el("span", { class: "muted" }, "Voting läuft · gleich Horn + Lieblingslied · dann "),
+          el("span", { class: "muted" }, lead),
           ...target))));
     return;
   }
@@ -188,13 +191,14 @@ export function renderSwitchHint(container, ds, vibe, role) {
   }
 
   // Fall 2: Ruhezustand - aktuelle Richtung, Restzeit des Blocks und wer aufholt.
-  // Ohne Herausforderer bleibt die Richtung stehen; Voting und Horn kommen trotzdem.
+  // Ohne Herausforderer bleibt die Richtung stehen; Voting und Horn kommen trotzdem
+  // (Horn nur im DJ-Pult erwaehnt, ist ein reiner Soundeffekt).
   // Rund um Mitternacht pausiert der Takt — sonst zaehlte die Anzeige auf 0 und
   // bliebe dort stehen, obwohl bewusst nichts passiert.
   const dwell = ds.midnightHold
     ? "Mitternachtslied hat Vorrang"
     : (ds.dwellRemainingMs > 0
-        ? "Voting & Horn in " + fmtClock(ds.dwellRemainingMs)
+        ? (showHorn ? "Voting & Horn in " + fmtClock(ds.dwellRemainingMs) : "Voting in " + fmtClock(ds.dwellRemainingMs))
         : "Wechsel läuft gleich");
   const main = [
     el("span", { class: "to", style: `color:${heldM.color}` }, `${heldM.emoji} ${held}`),

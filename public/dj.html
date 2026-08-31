@@ -232,7 +232,7 @@
       const { data } = await api("/api/state");
       renderCurrentDirection($("current-dir"), data.committedDirection);
       renderVibe($("vibe"), data.vibe, false);
-      renderSwitchHint($("switch"), data.directionSwitch, data.vibe, "dj");
+      renderSwitchHint($("switch"), data.directionSwitch, data.vibe, "dj", true);
       renderNow($("now"), data.nowPlaying);
       renderPlaybar(data);
 
