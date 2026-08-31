@@ -1167,13 +1167,13 @@ app.post("/api/requests", async (req, res) => {
   const now = Date.now();
   if (state.requests.some((r) => r.uri === track.uri && r.status !== "played"))
     return res.status(409).json({ error: "schon auf der Wunschliste" });
-  // Gleicher Song nur einmal pro Stunde: juengsten Wunsch fuer diese URI suchen
-  // (auch bereits gespielte Eintraege zaehlen) und innerhalb einer Stunde sperren.
+  // Gleicher Song nur einmal pro SONG_COOLDOWN_MS: juengsten Wunsch fuer diese URI
+  // suchen (auch bereits gespielte Eintraege zaehlen) und solange sperren.
   const lastSameUri = state.requests
     .filter((r) => r.uri === track.uri)
     .reduce((m, r) => Math.max(m, r.ts || 0), 0);
-  if (lastSameUri && now - lastSameUri < HOUR) {
-    const nextMin = Math.max(1, Math.ceil((lastSameUri + HOUR - now) / 60000));
+  if (lastSameUri && now - lastSameUri < SONG_COOLDOWN_MS) {
+    const nextMin = Math.max(1, Math.ceil((lastSameUri + SONG_COOLDOWN_MS - now) / 60000));
     return res.status(429).json({ error: "song_cooldown", nextMin });
   }
   const times = myTimes(guestId, now);
@@ -1228,8 +1228,8 @@ app.post("/api/requests/:id/vote", (req, res) => {
       .filter((r) => r.uri === t.uri)
       .reduce((m, r) => Math.max(m, r.ts || 0), 0);
     const now = Date.now();
-    if (lastSameUri && now - lastSameUri < HOUR) {
-      const nextMin = Math.max(1, Math.ceil((lastSameUri + HOUR - now) / 60000));
+    if (lastSameUri && now - lastSameUri < SONG_COOLDOWN_MS) {
+      const nextMin = Math.max(1, Math.ceil((lastSameUri + SONG_COOLDOWN_MS - now) / 60000));
       return res.status(429).json({ error: "song_cooldown", nextMin });
     }
     const times = myTimes(guestId, now);
