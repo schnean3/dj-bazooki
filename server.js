@@ -54,7 +54,7 @@ const SCOPES = [
   "playlist-read-collaborative",
 ].join(" ");
 
-const HOUR = 3600000;
+const HOUR = 14400000;
 const LIMIT = 10; // Wuensche pro Gast und Stunde
 // --- Musikrichtungen (5, Stand 30.08.2026) ------------------------------------
 // Frueher 8 (mit House/EDM, Slow/Love, Schlager und Mundart getrennt). Zusammengelegt,
