@@ -317,6 +317,14 @@ const ARTIST_MOOD = new Map([
 //                                       in Mundart. Echte Mundart-Acts fangen wir ueber
 //                                       MUNDART_ARTISTS ab, das laeuft ohnehin vorher.
 const GENRE_RULES = [
+  // Mundart ZUERST, aber nur mit eindeutigen Begriffen. Ohne diese Zeile zieht die
+  // Urban-Zeile jeden Mundart-Rapper weg ("swiss hip-hop" enthaelt "hip-hop",
+  // "mundart rap" enthaelt "rap"). Wichtig fuer die Tags aus dem Zweitkatalog
+  // (siehe externalArtistTags): fuer kleine CH-Rapper kommt von dort typischerweise
+  // ["hiphop","mundart","swiss hip-hop"] – und die gehoeren nach Mundart, gleiche
+  // Regel wie bei Bligg/Stress/Greis in MUNDART_ARTISTS. Kollisionsfrei, weil hier
+  // nur ganze Wortgruppen stehen: "swiss house" trifft keinen dieser Schluessel.
+  [M_HEIMAT,    ["mundart","schwiizerdutsch","schweizerdeutsch","swiss hip hop","swiss hip-hop","swiss rap","swissrap","schwiizer rap"]],
   [M_HEIMAT,    ["schlager","volksmusik","volkstumlich","apres","ballermann","discofox","stimmung","austropop"]],
   [M_REGGAETON, ["reggaeton","regueton","dembow","perreo","urbano"]],
   [M_URBAN,     ["dancehall","reggae","ragga","soca","hip hop","hip-hop","hiphop","rap","trap","r&b","rnb","urban contemporary","drill","grime","boom bap","afroswing","afrobeats"]],
@@ -341,28 +349,127 @@ const MANUAL_MOOD = {
 };
 
 // Reine Zuordnung aus Signalen – ohne Netzwerk, daher gut testbar.
-function moodFromSignals({ genres = [], artistName = "", title = "", year = null, audio = null }) {
-  const g = genres.map(norm);
+// Liefert zusaetzlich, WORAUS die Richtung stammt. "fallback" heisst: nichts hat
+// gegriffen, der Track ist nur mangels Signal in Party-Charts – genau diese Faelle
+// listet GET /api/pool unter "unklar" auf.
+function classifySignals({ genres = [], artistName = "", extTags = [] }) {
   const a = norm(artistName);
-  if ([...MUNDART_ARTISTS].some((x) => a.includes(x))) return M_HEIMAT;
-  if ([...SCHLAGER_ARTISTS].some((x) => a.includes(x))) return M_HEIMAT;
+  if ([...MUNDART_ARTISTS].some((x) => a.includes(x))) return { mood: M_HEIMAT, source: "artist-list" };
+  if ([...SCHLAGER_ARTISTS].some((x) => a.includes(x))) return { mood: M_HEIMAT, source: "artist-list" };
 
   // Eindeutige Interpreten vor den Genre-Regeln abfangen. Faengt genau die Faelle,
   // in denen Spotify keine Genres (mehr) liefert und der Track sonst in Party-Charts
   // durchrutscht (z. B. Eminem -> RnB, Hip-Hop & Reggaeton).
   for (const [name, mood] of ARTIST_MOOD) {
-    if (a.includes(name)) return mood;
+    if (a.includes(name)) return { mood, source: "artist-map" };
   }
 
   // Genre-Tags zuerst. Frueher lief hier eine "sehr ruhig"-Abkuerzung davor, die ruhige
   // Latino-/Reggae-Titel still nach Slow/Love gezogen hat. Slow/Love gibt es nicht mehr
   // (reiner Tanzabend), die Audio-Features spielen fuer die Zuordnung damit keine Rolle
   // mehr – ruhige Titel landen wie alles Unklare in Party-Charts.
-  for (const [mood, keys] of GENRE_RULES) {
-    if (g.some((gen) => keys.some((k) => gen.includes(k)))) return mood;
-  }
+  const byRules = (list, source) => {
+    const g = (list || []).map(norm);
+    for (const [mood, keys] of GENRE_RULES) {
+      if (g.some((gen) => keys.some((k) => gen.includes(k)))) return { mood, source };
+    }
+    return null;
+  };
 
-  return M_PARTY; // sicherste Tanzflaechen-Wahl
+  // Spotify-Genres schlagen die Fremdtags: Spotify ist praeziser, die Community-Tags
+  // sind nur der Lueckenfueller fuer Interpreten, zu denen Spotify gar nichts sagt.
+  return byRules(genres, "genres")
+      || byRules(extTags, "tags")
+      || { mood: M_PARTY, source: "fallback" }; // sicherste Tanzflaechen-Wahl
+}
+function moodFromSignals(sig) { return classifySignals(sig).mood; }
+
+/* ------------------- Zweitkatalog fuer unbekannte Interpreten -------------------
+ * Das eigentliche Loch: Spotify liefert fuer kleine Acts (CH-Rap, lokale Bands,
+ * Newcomer) ein leeres genres-Array. Dann greift keine GENRE_RULE und der Track
+ * faellt still in Party-Charts – nicht falsch klassifiziert, sondern gar nicht.
+ * Bisher half nur, den Interpreten von Hand in ARTIST_MOOD einzutragen; das
+ * skaliert bei Gaestewuenschen nicht.
+ *
+ * Loesung: Sagt Spotify nichts, fragen wir einen zweiten Katalog nach Community-
+ * Tags und schicken die durch dieselben GENRE_RULES. Beispiel Sulaya:
+ *   Spotify []  ->  Last.fm ["hiphop","mundart","swiss hip-hop"]  ->  Mundart & Schlager
+ *
+ * EXTERNAL_TAGS: "lastfm" (Standard sobald LASTFM_KEY gesetzt ist, beste Abdeckung
+ * in der Langstrecke), "musicbrainz" (ohne Key, dafuer duenner und langsam) oder
+ * "off". Ohne Konfiguration verhaelt sich alles exakt wie vorher.
+ * Wird nur bei komplett leeren Spotify-Genres angefragt, pro Interpret genau
+ * einmal (Cache), mit hartem Timeout, und wirft nie.
+ */
+const LASTFM_KEY = process.env.LASTFM_KEY || "";
+const EXTERNAL_TAGS = (process.env.EXTERNAL_TAGS || (LASTFM_KEY ? "lastfm" : "off")).toLowerCase().trim();
+const MB_UA = "DJ-BazooKI/1.0 (wedding-jukebox)";
+
+async function fetchJsonSafe(url, opts = {}, ms = 1500) {
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(url, { ...opts, signal: ctrl.signal });
+    return r.ok ? await r.json() : null;
+  } catch { return null; } finally { clearTimeout(to); }
+}
+
+// Last.fm: artist.getTopTags. count ist 0..100 relativ zum staerksten Tag; alles
+// unter 10 ist Rauschen ("seen live", "favourites").
+async function lastfmTags(name) {
+  const u = "https://ws.audioscrobbler.com/2.0/?" + new URLSearchParams({
+    method: "artist.gettoptags", artist: name, api_key: LASTFM_KEY, format: "json", autocorrect: "1",
+  });
+  const d = await fetchJsonSafe(u);
+  const tags = d?.toptags?.tag;
+  if (!Array.isArray(tags)) return [];
+  return tags.filter((t) => Number(t.count) >= 10).slice(0, 10).map((t) => String(t.name || "")).filter(Boolean);
+}
+
+// MusicBrainz: kein Key, dafuer 1 Anfrage/Sekunde – darum streng serialisiert.
+let mbChain = Promise.resolve();
+async function musicbrainzTags(name) {
+  const run = async () => {
+    const headers = { "User-Agent": MB_UA };
+    const wait = () => new Promise((r) => setTimeout(r, 1100));
+    await wait();
+    const q = "https://musicbrainz.org/ws/2/artist?fmt=json&limit=1&query=" + encodeURIComponent(`artist:"${name}"`);
+    const d = await fetchJsonSafe(q, { headers }, 2500);
+    const hit = d?.artists?.[0];
+    if (!hit?.id || (hit.score ?? 0) < 90) return [];
+    await wait();
+    const full = await fetchJsonSafe(`https://musicbrainz.org/ws/2/artist/${hit.id}?fmt=json&inc=tags+genres`, { headers }, 2500);
+    return [...(full?.genres || []), ...(full?.tags || [])]
+      .filter((t) => (t.count ?? 1) > 0).slice(0, 10).map((t) => String(t.name || "")).filter(Boolean);
+  };
+  mbChain = mbChain.then(run, run).catch(() => []);
+  return mbChain;
+}
+
+const extTagCache = new Map(); // norm(Interpret) -> [tag]
+async function artistTagsOnce(name) {
+  const k = norm(name);
+  if (!k) return [];
+  if (extTagCache.has(k)) return extTagCache.get(k);
+  let tags = [];
+  try {
+    if (EXTERNAL_TAGS === "lastfm" && LASTFM_KEY) tags = await lastfmTags(name);
+    else if (EXTERNAL_TAGS === "musicbrainz") tags = await musicbrainzTags(name);
+  } catch { tags = []; }
+  extTagCache.set(k, tags);
+  return tags;
+}
+
+// Haupt-Interpret zuerst; erst wenn der nichts hergibt, der naechste Gast. Sonst
+// wuerde bei Features der Gast die Richtung bestimmen (dasselbe Problem wie bei
+// den Spotify-Genres, siehe "Taki Taki").
+async function externalArtistTags(names) {
+  if (EXTERNAL_TAGS === "off") return [];
+  for (const n of (names || []).filter(Boolean).slice(0, 2)) {
+    const t = await artistTagsOnce(n);
+    if (t.length) return t;
+  }
+  return [];
 }
 
 // Optional: Audio-Features von ReccoBeats (gratis, ohne Key, per Spotify-Track-ID).
@@ -389,6 +496,7 @@ async function reccobeatsFeatures(spotifyId) {
 // Genres pro Interpret, gebuendelt und gecacht. /v1/artists nimmt bis zu 50 IDs pro
 // Aufruf – wichtig, damit das Laden der ganzen Playlist nicht in hunderte Calls zerfaellt.
 const artistGenreCache = new Map(); // artistId -> [genre]
+const artistNameCache = new Map();  // artistId -> Name (fuer die Abfrage im Zweitkatalog)
 async function artistGenres(ids) {
   const want = [...new Set((ids || []).filter(Boolean))];
   const missing = want.filter((id) => !artistGenreCache.has(id));
@@ -399,7 +507,10 @@ async function artistGenres(ids) {
       const r = await fetch("https://api.spotify.com/v1/artists?ids=" + chunk.join(","),
         { headers: { Authorization: "Bearer " + token } });
       const d = r.ok ? await r.json() : null;
-      for (const a of d?.artists || []) if (a?.id) artistGenreCache.set(a.id, a.genres || []);
+      for (const a of d?.artists || []) if (a?.id) {
+        artistGenreCache.set(a.id, a.genres || []);
+        if (a.name) artistNameCache.set(a.id, a.name);
+      }
     } catch { /* Katalog nicht erreichbar -> ohne Genres weiter */ }
     for (const id of chunk) if (!artistGenreCache.has(id)) artistGenreCache.set(id, []);
   }
@@ -407,10 +518,11 @@ async function artistGenres(ids) {
 }
 
 const moodCache = new Map(); // trackId -> Richtung
+const moodInfo = new Map();  // trackId -> { source, genres, tags } – nur fuer GET /api/pool
 async function classifyTrack(track) {
   const id = track?.trackId || track?.id;
   if (!id) return M_PARTY;
-  if (MANUAL_MOOD[id]) return MANUAL_MOOD[id];
+  if (MANUAL_MOOD[id]) { moodInfo.set(id, { source: "manual", genres: [], tags: [] }); return MANUAL_MOOD[id]; }
   if (moodCache.has(id)) return moodCache.get(id);
 
   let year = track.year ?? null;
@@ -440,10 +552,25 @@ async function classifyTrack(track) {
   let genres = [];
   try { genres = await artistGenres((artistIds || []).slice(0, 5)); } catch {}
 
-  const audio = await reccobeatsFeatures(id); // optional
-  const mood = moodFromSignals({ genres, artistName, title: track.title, year, audio });
-  moodCache.set(id, mood);
-  return mood;
+  // Kein reccobeatsFeatures() mehr an dieser Stelle: seit dem Wegfall von Slow/Love
+  // fliessen die Audio-Features nicht mehr in die Zuordnung ein – der Aufruf kostete
+  // beim Laden der Playlist nur einen HTTP-Request pro Track. Funktion bleibt, falls
+  // wieder gebraucht.
+  let res = classifySignals({ genres, artistName });
+
+  // Spotify sagt gar nichts ueber die Interpreten: zweiten Katalog fragen, statt den
+  // Track stumm in Party-Charts fallen zu lassen. Nur in genau diesem Fall – hat
+  // Spotify Genres geliefert, ist das Ergebnis (auch Party-Charts) eine Aussage.
+  let extTags = [];
+  if (res.source === "fallback" && !genres.length) {
+    const names = (artistIds || []).map((x) => artistNameCache.get(x)).filter(Boolean);
+    extTags = await externalArtistTags(names.length ? names : String(artistName).split(",").map((s) => s.trim()));
+    if (extTags.length) res = classifySignals({ genres, artistName, extTags });
+  }
+
+  moodCache.set(id, res.mood);
+  moodInfo.set(id, { source: res.source, genres, tags: extTags });
+  return res.mood;
 }
 
 /* ----------------------------- persistente State ----------------------------- */
@@ -1263,17 +1390,29 @@ app.get("/api/pool", (req, res) => {
   // [] heisst: Spotify hat keine Genres -> Track wurde nur ueber Name/Audio-Fallback
   // eingeordnet. Genau diese Interpreten gehoeren ggf. in ARTIST_MOOD.
   const debug = req.query.debug === "1" || req.query.debug === "true";
+  const info = (t) => moodInfo.get(t.trackId) || {};
   const trackOut = (t) => {
-    const base = { title: t.title, artist: t.artist, trackId: t.trackId };
-    if (debug) base.genres = [...new Set((t.artistIds || []).flatMap((id) => artistGenreCache.get(id) || []))];
+    const base = { title: t.title, artist: t.artist, trackId: t.trackId, source: info(t).source || "?" };
+    if (debug) {
+      base.genres = [...new Set((t.artistIds || []).flatMap((id) => artistGenreCache.get(id) || []))];
+      base.tags = info(t).tags || [];
+    }
     return base;
   };
+  // Die eigentlich interessante Liste: Tracks, bei denen NICHTS gegriffen hat und die
+  // nur mangels Signal in Party-Charts liegen. Genau die gehoeren vor dem Fest in
+  // ARTIST_MOOD bzw. MANUAL_MOOD – oder sind ein Fall fuer den Zweitkatalog.
+  const unclear = Object.values(poolByMood).flat()
+    .filter((t) => (info(t).source || "fallback") === "fallback")
+    .map((t) => ({ title: t.title, artist: t.artist, trackId: t.trackId }));
   res.json({
     playlistId: SPOTIFY_PLAYLIST_ID || null,
     total: poolMeta.total,
     dropped: poolMeta.dropped,
     error: poolMeta.error,
     loadedAt: poolMeta.ts || null,
+    externalTags: EXTERNAL_TAGS === "lastfm" && !LASTFM_KEY ? "lastfm (kein LASTFM_KEY!)" : EXTERNAL_TAGS,
+    unclear: { count: unclear.length, tracks: unclear },
     byMood: Object.fromEntries(MOOD_NAMES.map((m) => [m, {
       count: (poolByMood[m] || []).length,
       autoFill: !NO_AUTOFILL.has(m),
@@ -1285,6 +1424,10 @@ app.get("/api/pool", (req, res) => {
 // Playlist sofort neu einlesen (z. B. nachdem Songs ergaenzt wurden).
 app.post("/api/pool/reload", djOnly, async (_req, res) => {
   moodCache.clear();
+  moodInfo.clear();
+  // Leere Tag-Antworten nicht ewig festhalten: war der Zweitkatalog kurz weg, soll
+  // ein Reload es erneut versuchen. Echte Treffer bleiben gecacht.
+  for (const [k, v] of extTagCache) if (!v.length) extTagCache.delete(k);
   await loadPool(true);
   res.json({
     ok: !poolMeta.error,
