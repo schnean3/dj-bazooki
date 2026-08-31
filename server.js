@@ -141,6 +141,14 @@ const MOOD_POOL = {
 // verfehlt z. B. "Guns N' Roses" den Listen-Eintrag "guns n roses".
 const norm = (s) => (s || "").toString().toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/['’‘"]/g, "").trim();
 
+// CH-Rap-Acts, die trotz Mundart fix nach RnB/Hip-Hop gehoeren (Entscheid 31.08.2026).
+// Steht bewusst VOR MUNDART_ARTISTS und vor ARTIST_MOOD: der Vergleich laeuft gegen ALLE
+// Interpreten eines Tracks, ein Feature mit einem Mundart-Act (Nemo, Baze, Greis ...)
+// wuerde den Song sonst nach Mundart & Schlager ziehen.
+const HIPHOP_ARTISTS = new Set([
+  "sulaya","grenzstyle","mimiks",
+].map(norm));
+
 // Interpreten mit eindeutiger Zuordnung (Spotify-Genres sind hier oft leer/ungenau).
 const MUNDART_ARTISTS = new Set([
   "lo & leduc","lo&leduc","patent ochsner","baschi","gola","bligg","hecht","77 bombay street",
@@ -191,8 +199,10 @@ const ARTIST_MOOD = new Map([
   // genres-Array -> keine GENRE_RULE greift -> sie fielen als "nicht ruhig" in
   // Party-Charts. Alle hier -> HipHop/Dancehall.
   // ACHTUNG Mundart: Schweizer Mundart-Rapper (Bligg, Stress, Greis, Baze, EKR,
-  // Nativ, Mimiks, Pronto, Breitbild ...) gehoeren NICHT hierher, sondern nach
+  // Nativ, Pronto, Breitbild ...) gehoeren NICHT hierher, sondern nach
   // Mundart. Die laufen ueber MUNDART_ARTISTS (steht weiter oben, greift zuerst).
+  // Ausnahmen mit Entscheid: Sulaya, Grenzstyle und Mimiks stehen in HIPHOP_ARTISTS
+  // (ganz oben) und landen fix hier, obwohl sie Mundart rappen.
   // Nur Acts, die Hochdeutsch rappen (Loredana, RAF Camora), stehen hier.
   //   Aggro/Berlin & Ruhrpott (2005+)
   ["sido",M_URBAN],["bushido",M_URBAN],["fler",M_URBAN],
@@ -356,6 +366,7 @@ const MANUAL_MOOD = {
 // listet GET /api/pool unter "unklar" auf.
 function classifySignals({ genres = [], artistName = "", extTags = [] }) {
   const a = norm(artistName);
+  if ([...HIPHOP_ARTISTS].some((x) => a.includes(x))) return { mood: M_URBAN, source: "artist-list" };
   if ([...MUNDART_ARTISTS].some((x) => a.includes(x))) return { mood: M_HEIMAT, source: "artist-list" };
   if ([...SCHLAGER_ARTISTS].some((x) => a.includes(x))) return { mood: M_HEIMAT, source: "artist-list" };
 
