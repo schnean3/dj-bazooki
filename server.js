@@ -1746,16 +1746,52 @@ let guests = [];                     // [{ name, title, artist, uri, trackId, im
 let guestsMeta = { ts: 0, total: 0, resolved: 0, unresolved: [], error: null };
 const GUESTS_REFRESH_MS = 10 * 60000;
 
+// Optionale 4. Spalte: der exakte Track. Akzeptiert spotify:track:ID, einen
+// open.spotify.com-Link (auch mit /intl-xx/ und ?si=...) oder die nackte ID.
+function parseTrackRef(ref) {
+  const s = (ref || "").trim();
+  if (!s) return null;
+  const m = s.match(/(?:spotify:track:|track\/)([A-Za-z0-9]{22})/) || s.match(/^([A-Za-z0-9]{22})$/);
+  return m ? m[1] : null;
+}
+
 function parseGuestsCsv(text) {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const rows = [];
   for (const line of lines) {
     const parts = line.split(";").map((p) => p.trim());
     if (parts[0]?.toLowerCase() === "name" && parts[1]?.toLowerCase() === "titel") continue; // Header
-    const [name, title, artist] = parts;
-    if (name && title) rows.push({ name, title, artist: artist || "" });
+    const [name, title, artist, ref] = parts;
+    if (name && title) rows.push({ name, title, artist: artist || "", trackId: parseTrackRef(ref) });
   }
   return rows;
+}
+
+// Holt mehrere Tracks in einem Rutsch (max. 50 pro Aufruf) ueber ihre ID.
+// apiError trennt "Spotify war nicht erreichbar" von "diese ID gibt es nicht" --
+// nur im ersten Fall spielen wir die URI blind trotzdem.
+async function tracksByIds(ids) {
+  const map = new Map();
+  let apiError = false;
+  for (let i = 0; i < ids.length; i += 50) {
+    const chunk = ids.slice(i, i + 50);
+    try {
+      const token = await getAppToken();
+      const r = await fetch(`https://api.spotify.com/v1/tracks?ids=${chunk.join(",")}&market=${MARKET}`,
+        { headers: { Authorization: "Bearer " + token } });
+      if (!r.ok) { await r.text().catch(() => {}); apiError = true; continue; }
+      const d = await r.json();
+      for (const t of d.tracks || []) {
+        if (!t?.id) continue;
+        // is_playable kommt nur mit market=... und ist false, wenn der Track in der
+        // Schweiz nicht laeuft. Lieber jetzt in der DJ-Liste melden als am Fest still
+        // uebersprungen zu werden.
+        if (t.is_playable === false) continue;
+        map.set(t.id, { uri: t.uri, trackId: t.id, title: t.name, artist: (t.artists || []).map((a) => a.name).join(", "), image: t.album?.images?.[0]?.url || null });
+      }
+    } catch { apiError = true; }
+  }
+  return { map, apiError };
 }
 
 async function loadGuests(force = false) {
@@ -1769,7 +1805,25 @@ async function loadGuests(force = false) {
   }
   const out = [];
   const unresolved = [];
+  // Zeilen mit Track-ID zuerst, gebuendelt -- das ist der exakte Track aus der
+  // Playlist, ohne Suche und ohne Risiko, eine Karaoke-Version zu erwischen.
+  const ids = [...new Set(rows.map((r) => r.trackId).filter(Boolean))];
+  const { map: byId, apiError } = ids.length ? await tracksByIds(ids) : { map: new Map(), apiError: false };
+
   for (const row of rows) {
+    if (row.trackId) {
+      const t = byId.get(row.trackId);
+      if (t) { out.push({ name: row.name, ...t, resolved: true }); continue; }
+      if (apiError) {
+        // Katalog nicht erreichbar: die URI allein reicht zum Abspielen, Titel aus der CSV.
+        out.push({ name: row.name, title: row.title, artist: row.artist, uri: "spotify:track:" + row.trackId, trackId: row.trackId, image: null, resolved: true });
+        continue;
+      }
+      // Spotify kennt die ID nicht oder der Track laeuft im Markt CH nicht.
+      out.push({ name: row.name, title: row.title, artist: row.artist, uri: null, trackId: null, image: null, resolved: false });
+      unresolved.push(`${row.name}: ${row.title} — ${row.artist} (Track-ID ${row.trackId} unbekannt oder in ${MARKET} nicht spielbar)`);
+      continue;
+    }
     const key = norm(row.title) + "|||" + norm(row.artist);
     let t = guestResolveCache.get(key);
     if (t === undefined) {
