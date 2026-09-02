@@ -111,7 +111,12 @@
             : `Schon auf der Wunschliste — dein Herz ist schon drauf ♥`);
         $("q").value = ""; $("results").innerHTML = ""; refresh();
       }
-      else if (ok) { toast(data.queued ? `„${pendingTrack.title}" ist in der Queue 🎶` : `„${pendingTrack.title}" gewünscht — wartet auf DJ-Freigabe 🎶`); $("q").value = ""; $("results").innerHTML = ""; refresh(); }
+      else if (ok) {
+        toast(data.milestone
+          ? `🎉 Der ${data.milestone}. Wunsch des Abends — „${pendingTrack.title}" kommt als Nächstes!`
+          : data.queued ? `„${pendingTrack.title}" ist in der Queue 🎶` : `„${pendingTrack.title}" gewünscht — wartet auf DJ-Freigabe 🎶`);
+        $("q").value = ""; $("results").innerHTML = ""; refresh();
+      }
       else if (status === 429 && data.error === "song_cooldown") toast(`Dieses Lied wurde gerade schon gewünscht — wieder möglich in ${data.nextMin} Min.`);
       else if (status === 429) toast(`Limit erreicht. Nächster Wunsch in ${data.nextMin} Min.`);
       else toast("Hat nicht geklappt: " + (data.error || status));
@@ -279,6 +284,8 @@
       const playing = np?.id === r.id;
       const badge = playing
         ? el("span", { class: "badge", style: "background:var(--gold)" }, "läuft")
+        : r.milestone
+        ? el("span", { class: "badge", style: "background:var(--gold);color:#1b1b1b" }, `🎉 ${r.milestone}. Wunsch`)
         : r.status === "queued"
         ? el("span", { class: "badge", style: `background:${MOODS[r.mood]?.color || "var(--border)"}` }, "in Queue")
         : el("span", { class: "badge", style: "background:var(--border);color:var(--dim)" }, "wartet");
@@ -312,8 +319,11 @@
       const curMood = data.committedDirection?.mood || null;
       const byLove = (a, b) => b.weight - a.weight || a.ts - b.ts;
       // Wünsche der laufenden Richtung spielen jetzt; andere warten auf ihre Richtung.
-      const nowList = all.filter((r) => !curMood || r.mood === curMood).sort(byLove);
-      const waitList = all.filter((r) => curMood && r.mood !== curMood).sort(byLove);
+      // Quer zur Richtung laufende Eintraege (DJ-Pin, Mitternachtslied, Meilenstein,
+      // Auto-Fill) stehen immer in der aktuellen Liste — sie warten auf nichts.
+      const onDirection = (r) => r.dj || r.auto || !curMood || r.mood === curMood;
+      const nowList = all.filter(onDirection).sort(byLove);
+      const waitList = all.filter((r) => !onDirection(r)).sort(byLove);
 
       $("wl-count").textContent = nowList.length;
       const wl = $("wishlist");

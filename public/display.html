@@ -227,11 +227,12 @@ function renderUpNext(requests, nowId, curMood) {
     const hearts = r.weight ?? (1 + (r.voterIds?.length || 0));
     host.append(el("div", { class: "up-row" },
       el("div", { class: "up-rank" }, i + 1),
-      el("div", { class: "up-mood" }, r.midnight ? "🕛" : (m?.emoji || "🎵")),
+      el("div", { class: "up-mood" }, r.midnight ? "🕛" : r.milestone ? "🎉" : (m?.emoji || "🎵")),
       el("div", { style: "min-width:0;flex:1" },
         el("div", { class: "up-title truncate" }, r.title),
         el("div", { class: "up-artist truncate" }, r.artist),
         r.midnight ? el("div", { class: "up-by truncate" }, "zur Mitternacht 🥂")
+          : r.milestone ? el("div", { class: "up-by truncate" }, `${r.milestone}. Wunsch des Abends 🎉 — von ${r.addedBy}`)
           : (r.addedBy && r.addedBy !== "DJ BazooKI" && r.addedBy !== "DJ") ? el("div", { class: "up-by truncate" }, "von " + r.addedBy) : null),
       el("div", { class: "up-hearts" }, "♥ " + hearts)));
   });

@@ -238,6 +238,7 @@
       dj:       { emoji: "🎧", label: "DJ" },
       vote:     { emoji: "🏆", label: "Voting" },
       midnight: { emoji: "🕛", label: "Mitternacht" },
+      milestone:{ emoji: "🎉", label: "Meilenstein" },
       horn:     { emoji: "📯", label: "Horn" },
       extern:   { emoji: "📻", label: "extern" },
     };
@@ -327,7 +328,7 @@
           el("div", { style: "min-width:0;flex:1" },
             el("div", { class: "truncate", style: "font-weight:600;font-size:14px" }, e.title || "—"),
             el("div", { class: "truncate muted", style: "font-size:12px" },
-              [e.artist, `${s.emoji} ${s.label}`, e.addedBy && e.source === "wish" ? `von ${e.addedBy}` : null,
+              [e.artist, `${s.emoji} ${s.label}`, e.addedBy && (e.source === "wish" || e.source === "milestone") ? `von ${e.addedBy}` : null,
                short ? "übersprungen" : null].filter(Boolean).join(" · ")))));
       }
     }
@@ -374,6 +375,7 @@
         const title = el("div", { style: "display:flex;align-items:center;gap:8px" },
           el("span", { class: "truncate", style: "font-weight:600" }, r.title),
           r.midnight ? el("span", { class: "badge", style: "background:var(--gold);color:#1b1b1b", title: "Mitternachtslied — läuft quer zur Richtung" }, "🕛 Mitternacht")
+            : r.milestone ? el("span", { class: "badge", style: "background:var(--gold);color:#1b1b1b", title: `${r.milestone}. Wunsch des Abends — läuft quer zur Richtung` }, `🎉 ${r.milestone}. Wunsch`)
             : r.dj ? el("span", { class: "badge", style: "background:var(--rose)" }, "DJ") : null,
           r.auto ? el("span", { class: "badge", style: `background:${MOODS[r.mood]?.color || "var(--border)"}` }, "auto") : null,
           offDir ? el("span", { class: "badge", style: "background:var(--border);color:var(--dim)", title: "Wartet, bis diese Richtung läuft" }, "⏳ wartet") : null,
@@ -382,7 +384,7 @@
           el("div", { style: "width:18px;color:var(--dim);font-family:var(--display);font-size:16px" }, i + 1),
           el("div", { style: "min-width:0;flex:1" }, title,
             el("div", { class: "truncate muted", style: "font-size:12.5px" }, `${r.artist} · ${MOODS[r.mood]?.emoji || "🎵"} ${r.mood} · ♥ ${r.weight}`),
-            (!r.dj && !r.auto) ? el("div", { class: "truncate", style: "font-size:12px;color:var(--gold);margin-top:2px" }, `von ${r.addedBy}`) : null),
+            (r.milestone || (!r.dj && !r.auto)) ? el("div", { class: "truncate", style: "font-size:12px;color:var(--gold);margin-top:2px" }, `von ${r.addedBy}`) : null),
           el("button", { class: "btn ghost", title: "Entfernen", onclick: () => act(`/api/requests/${r.id}/reject`) }, "✕"),
           el("button", { class: "btn", title: r.sent ? "Bereits in Spotify" : "In die Spotify-Queue schieben", disabled: r.sent ? "" : null, onclick: r.sent ? null : () => act(`/api/requests/${r.id}/push`) }, "→ Spotify"),
           el("button", { class: "btn gold", title: "Sofort abspielen", onclick: () => act(`/api/requests/${r.id}/playnow`) }, "▶")));
