@@ -38,8 +38,11 @@ const {
   // Richtung. Leer lassen => ganz aus.
   MIDNIGHT_URI = "spotify:track:12LkVK4F1Tq0bLtzl7wkpf",
   // Zeitzone, nach der "Mitternacht" bestimmt wird. Der Server läuft auf Render
-  // in UTC, das Fest in der Schweiz — darum hier explizit.
+  // in UTC, das Fest in der Schweiz — darum hier explizit. Gilt auch für die
+  // Uhrzeiten im Verlauf.
   MIDNIGHT_TZ = "Europe/Zurich",
+  // Name der "So war's"-Playlist, die am Ende des Abends aus dem Verlauf gebaut wird.
+  RECAP_PLAYLIST_NAME = "Hochzeit C&D — so war's 💍",
 } = process.env;
 
 if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
@@ -52,6 +55,11 @@ const SCOPES = [
   "user-read-currently-playing",
   "playlist-read-private",
   "playlist-read-collaborative",
+  // Nur fuer die "So war's"-Playlist am Ende des Abends. Ein Refresh-Token behaelt
+  // die Scopes seiner Erst-Anmeldung -> wer vor diesem Update eingeloggt war, muss
+  // einmal abmelden und neu anmelden, sonst fehlt das Recht.
+  "playlist-modify-public",
+  "playlist-modify-private",
 ].join(" ");
 
 const HOUR = 3600000;
@@ -615,6 +623,11 @@ const emptyState = () => ({
   // Mitternachtslied: date = das lokale Datum, dessen 00:00 schon abgehandelt ist
   // (verhindert Doppelstart im 15-Min-Fenster). phase: null | "queued" | "playing".
   midnight: { date: null, phase: null, uri: null, id: null, queuedAt: 0 },
+  // Verlauf: jeder Song, den Spotify tatsaechlich gespielt hat, in der Reihenfolge
+  // des Abends. Quelle fuer die "So war's"-Playlist und den CSV-Export.
+  history: [],
+  // Angelegte "So war's"-Playlist: { id, url, name, ts, added: [uri] }.
+  recap: null,
 });
 // Umbenennung der Richtungen (8 -> 5, 30.08.2026). Ein data.json aus der Zeit davor
 // enthaelt noch die alten Namen; ohne Umschluesselung wuerden die Wuensche als
@@ -633,6 +646,7 @@ function migrateMoods(st) {
   if (st.nowPlaying) st.nowPlaying.mood = fixMood(st.nowPlaying.mood);
   if (st.committedDirection) st.committedDirection.mood = fixMood(st.committedDirection.mood);
   for (const l of st.log || []) if (l) l.mood = fixMood(l.mood);
+  for (const h of st.history || []) if (h) h.mood = fixMood(h.mood);
   return st;
 }
 
@@ -1409,7 +1423,16 @@ app.get("/api/spotify-now", djOnly, async (_req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post("/api/reset", djOnly, (_req, res) => { state = emptyState(); persist(); res.json({ ok: true }); });
+// "Abend zuruecksetzen" leert Wuensche, Queue und Voting — der Verlauf bleibt.
+// Ein Fehlgriff mitten im Fest soll nicht die "So war's"-Playlist mitnehmen;
+// zum Loeschen gibt es DELETE /api/history.
+app.post("/api/reset", djOnly, (_req, res) => {
+  const history = state.history || [];
+  const recap = state.recap || null;
+  state = { ...emptyState(), history, recap };
+  persist();
+  res.json({ ok: true });
+});
 
 // Wie sieht der Pool aus? Zeigt pro Richtung, wie viele Songs aus der Playlist
 // dort gelandet sind – damit sichtbar wird, welche Richtung noch leer ist.
@@ -2005,6 +2028,216 @@ function maybeClearVote() {
   if (v && v.closed && v.clearAt != null && Date.now() >= v.clearAt) { state.vote = null; persist(); }
 }
 
+/* --------------------------- Verlauf ("So war's") ---------------------------
+ * Protokolliert, was Spotify wirklich gespielt hat — nicht, was wir in die Queue
+ * gelegt haben. Das ist der Unterschied: der Hintergrund-Playlist-Song vor dem
+ * ersten Wunsch, ein vom DJ von Hand gestarteter Song und ein uebersprungener
+ * Song sehen in unserer Queue gleich aus, im Verlauf nicht.
+ *
+ * Erkennung rein ueber den Wechsel von playback.uri (alle 5s in tick()). Startzeit
+ * kommt aus `now - progress`, ist also auch dann richtig, wenn der Server einen
+ * Song erst in der Mitte zum ersten Mal sieht.
+ * ------------------------------------------------------------------------- */
+const HISTORY_MAX = 3000;          // Kappung, damit data.json nicht unbegrenzt waechst
+const HISTORY_MIN_MS = 45000;      // ab hier gilt ein Song als "gelaufen" (nicht weggeskippt)
+
+const clockFmt = new Intl.DateTimeFormat("de-CH", {
+  timeZone: MIDNIGHT_TZ, hour: "2-digit", minute: "2-digit", hour12: false,
+});
+const stampFmt = new Intl.DateTimeFormat("de-CH", {
+  timeZone: MIDNIGHT_TZ, year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", hour12: false,
+});
+
+// Woher kam der Song? Bestimmt Badge, CSV-Spalte und ob er in die Playlist darf.
+function historySourceFor(req, uri) {
+  if (HORN_URI && uri === HORN_URI) return "horn";
+  if (!req) return "extern";          // lief auf Spotify, kam aber nicht aus unserer Queue
+  if (req.midnight) return "midnight";
+  if (req.voteWin) return "vote";
+  if (req.auto) return "pool";
+  if (req.dj) return "dj";
+  return "wish";
+}
+
+// Zu welchem Queue-Eintrag gehoert die laufende URI? Bevorzugt der als nowPlaying
+// markierte, sonst der zuletzt angelegte mit derselben URI.
+function historyRequestFor(uri) {
+  const np = state.requests.find((r) => r.id === state.nowPlaying?.id && r.uri === uri);
+  if (np) return np;
+  for (let i = state.requests.length - 1; i >= 0; i--) if (state.requests[i].uri === uri) return state.requests[i];
+  return null;
+}
+
+function recordHistory() {
+  const uri = playback.uri;
+  if (!uri) return;
+  const hist = (state.history ||= []);
+  const last = hist[hist.length - 1];
+
+  // Derselbe Song laeuft weiter: nur die Spielzeit fortschreiben. Bewusst ohne
+  // persist() — sonst schriebe jeder 5s-Tick die ganze data.json neu. Der naechste
+  // echte Eintrag nimmt den Wert mit.
+  if (last && last.uri === uri) {
+    const ms = Math.max(last.ms || 0, playback.progress || 0);
+    if (ms > (last.ms || 0)) last.ms = ms;
+    if (playback.duration > 0 && !last.duration) last.duration = playback.duration;
+    return;
+  }
+
+  const req = historyRequestFor(uri);
+  hist.push({
+    ts: Date.now() - (playback.progress || 0),   // geschaetzter Songstart
+    uri,
+    trackId: uri.startsWith("spotify:track:") ? uri.split(":")[2] : (req?.trackId || null),
+    title: playback.title || req?.title || null,
+    artist: playback.artist || req?.artist || null,
+    image: req?.image || null,
+    mood: req?.mood || null,
+    addedBy: req?.addedBy || null,
+    byId: req?.byId || null,
+    source: historySourceFor(req, uri),
+    ms: playback.progress || 0,
+    duration: playback.duration || 0,
+  });
+  if (hist.length > HISTORY_MAX) hist.splice(0, hist.length - HISTORY_MAX);
+  persist();
+}
+
+// Gefilterte Sicht. Ohne `all` fliegen Horn und Anspieler raus — das ist die Liste,
+// aus der Playlist und CSV gebaut werden.
+function historyList({ minMs = HISTORY_MIN_MS, all = false } = {}) {
+  const rows = (state.history || []).filter((e) => e && e.uri);
+  if (all) return rows;
+  return rows.filter((e) => e.source !== "horn" && (e.ms || 0) >= minMs);
+}
+
+function historyForClient(e) {
+  return {
+    ...e,
+    time: clockFmt.format(new Date(e.ts)),
+    minutes: Math.round((e.ms || 0) / 6000) / 10,
+  };
+}
+
+// GET /api/history?all=1&min=30   (min in Sekunden)
+app.get("/api/history", (req, res) => {
+  const all = req.query.all === "1" || req.query.all === "true";
+  const minMs = req.query.min != null ? Math.max(0, Number(req.query.min) || 0) * 1000 : HISTORY_MIN_MS;
+  const rows = historyList({ minMs, all });
+  res.json({
+    total: (state.history || []).length,
+    counted: rows.length,
+    minMs,
+    playlistReady: rows.filter((e) => e.uri.startsWith("spotify:track:")).length,
+    canWritePlaylist: /playlist-modify/.test(dj.scope || ""),
+    recap: state.recap || null,
+    items: rows.map(historyForClient),
+  });
+});
+
+// Tabellenexport. Semikolon + BOM, damit Excel auf Deutsch die Umlaute und die
+// Spalten richtig nimmt (gleiche Konvention wie guests.csv).
+app.get("/api/history.csv", (req, res) => {
+  const all = req.query.all === "1" || req.query.all === "true";
+  const rows = historyList({ all });
+  const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const lines = ["Zeit;Titel;Interpret;Richtung;Quelle;Gewuenscht von;Minuten;Spotify-URI"];
+  for (const e of rows) {
+    lines.push([
+      q(stampFmt.format(new Date(e.ts))), q(e.title), q(e.artist), q(e.mood),
+      q(e.source), q(e.addedBy), q((Math.round((e.ms || 0) / 6000) / 10).toFixed(1)), q(e.uri),
+    ].join(";"));
+  }
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="dj-bazooki-verlauf.csv"`);
+  res.send("\uFEFF" + lines.join("\r\n") + "\r\n");
+});
+
+// Verlauf loeschen. Bewusst ein eigener Endpoint: "Abend zuruecksetzen" laesst den
+// Verlauf stehen, damit ein versehentlicher Reset am Fest nicht den ganzen Abend
+// mitnimmt.
+app.delete("/api/history", djOnly, (_req, res) => {
+  state.history = [];
+  state.recap = null;
+  persist();
+  res.json({ ok: true });
+});
+
+// Songs an eine Playlist haengen. Spotify hat im Feb-2026-Umbau /tracks nach /items
+// umbenannt; alte Clients laufen z.T. noch auf /tracks -> beide versuchen.
+async function addPlaylistItems(playlistId, uris) {
+  for (let i = 0; i < uris.length; i += 100) {
+    const body = JSON.stringify({ uris: uris.slice(i, i + 100) });
+    const opts = { method: "POST", headers: { "Content-Type": "application/json" }, body };
+    let r = await djFetch(`/playlists/${playlistId}/items`, opts);
+    if (r.status === 404 || r.status === 405) {
+      await r.text().catch(() => {});
+      r = await djFetch(`/playlists/${playlistId}/tracks`, opts);
+    }
+    if (!r.ok) throw new Error(`add ${r.status}: ${(await r.text()).slice(0, 160)}`);
+  }
+}
+
+// POST /api/history/playlist  { name?, fresh? }
+// Baut die "So war's"-Playlist aus dem Verlauf. Nochmal druecken haengt nur die
+// seither dazugekommenen Songs an dieselbe Playlist -> der Knopf ist gefahrlos
+// mehrfach benutzbar. { fresh: true } legt bewusst eine neue an.
+app.post("/api/history/playlist", djOnly, async (req, res) => {
+  if (!/playlist-modify/.test(dj.scope || "")) {
+    return res.status(400).json({ error: "scope_missing" });
+  }
+  const rows = historyList({});
+  // Reihenfolge des Abends, jeder Song genau einmal, keine Episoden (das Horn
+  // faellt schon im Filter raus, aber Podcast-URIs gehoeren generell nicht rein).
+  const uris = [];
+  const seen = new Set();
+  for (const e of rows) {
+    if (!e.uri.startsWith("spotify:track:") || seen.has(e.uri)) continue;
+    seen.add(e.uri);
+    uris.push(e.uri);
+  }
+  if (!uris.length) return res.status(400).json({ error: "history_empty" });
+
+  try {
+    let recap = req.body?.fresh ? null : state.recap;
+    let created = false;
+
+    if (!recap?.id) {
+      const meRes = await djFetch("/me");
+      if (!meRes.ok) throw new Error(`me ${meRes.status}`);
+      const me = await meRes.json();
+      const name = (req.body?.name || RECAP_PLAYLIST_NAME).toString().slice(0, 100);
+      const cr = await djFetch(`/users/${encodeURIComponent(me.id)}/playlists`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          public: true,
+          description: "Alle Songs des Abends in der Reihenfolge, in der sie liefen. Aufgezeichnet von DJ BazooKI.",
+        }),
+      });
+      if (!cr.ok) throw new Error(`create ${cr.status}: ${(await cr.text()).slice(0, 160)}`);
+      const pl = await cr.json();
+      recap = { id: pl.id, url: pl.external_urls?.spotify || `https://open.spotify.com/playlist/${pl.id}`, name: pl.name || name, ts: Date.now(), added: [] };
+      created = true;
+    }
+
+    const already = new Set(recap.added || []);
+    const toAdd = uris.filter((u) => !already.has(u));
+    if (toAdd.length) await addPlaylistItems(recap.id, toAdd);
+
+    recap.added = [...(recap.added || []), ...toAdd];
+    recap.ts = Date.now();
+    state.recap = recap;
+    persist();
+    res.json({ ok: true, created, added: toAdd.length, total: recap.added.length, url: recap.url, name: recap.name });
+  } catch (e) {
+    console.error("recap-playlist", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /* ----------------------------- Auto-Advance-Loop ----------------------------- */
 // Alle 5s: laufenden Song lesen, nowPlaying abgleichen, ggf. naechsten nachschieben.
 async function tick() {
@@ -2044,6 +2277,10 @@ async function tick() {
       persist();
     }
   }
+
+  // Verlauf: erst hier, damit nowPlaying schon steht und der Eintrag Richtung und
+  // Wuenscher mitbekommt.
+  try { recordHistory(); } catch (e) { console.error("verlauf", e.message); }
 
   // Wechsel-Sequenz: hier, mit frischen Playback-Daten. Startet am Blockende auf
   // dem laufenden Song, schliesst 1 Min vor dessen Ende und haengt dann Horn +

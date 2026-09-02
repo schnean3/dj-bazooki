@@ -181,12 +181,33 @@ Bekannte Kanten: Hat der Auto-Advance den nächsten Pool-Song schon zu Spotify g
 
 ---
 
+## 8e · Verlauf und „So war's"-Playlist testen
+
+Der Server schreibt jeden Song mit, den Spotify **wirklich** gespielt hat — auch die aus der Hintergrund-Playlist, die nie durch BazooKI liefen. Daraus entsteht am Ende die Playlist fürs Brautpaar.
+
+**Wichtig, einmalig vor dem Fest:** Für das Anlegen der Playlist braucht das DJ-Konto ein neues Spotify-Recht (`playlist-modify-public`). Ein bestehender Login behält die alten Rechte. Also einmal **abmelden → neu anmelden** und im Spotify-Dialog bestätigen. Solange das fehlt, steht im DJ-Pult ein entsprechender Hinweis und der Knopf meldet einen Fehler.
+
+1. Ein paar Songs laufen lassen (mindestens einer über 45 Sek).
+2. Im DJ-Pult unten die Sektion **Verlauf · gespielt** — dort stehen die Songs mit Uhrzeit und Herkunft: 💌 Wunsch (mit Name), 🎲 Pool, 🎧 DJ, 🏆 Voting, 🕛 Mitternacht, 📯 Horn, 📻 extern.
+3. Einen Song bewusst überspringen → er erscheint ausgegraut mit „übersprungen" und zählt **nicht** für die Playlist.
+4. **⬇ CSV** → Datei öffnet in Excel mit Zeit, Titel, Interpret, Richtung, Quelle, Wünscher.
+5. **🎧 „So war's"-Playlist** → Toast „Playlist … angelegt". Der Link **→ Playlist öffnen** führt in Spotify auf die neue, öffentliche Playlist.
+6. Nochmal drücken → „Playlist ist schon aktuell." Nach weiteren Songs erneut drücken → nur die neuen werden nachgetragen, nichts doppelt.
+
+**Prüfpunkt:** Reihenfolge in Spotify = Reihenfolge des Abends, jeder Song genau einmal, kein Horn drin.
+
+Der Knopf ist beliebig oft drückbar — am besten am Ende des Fests nochmal, dann ist alles drin. **„Abend zurücksetzen" löscht den Verlauf bewusst nicht**; dafür gibt es daneben **🗑 Verlauf leeren** mit Rückfrage (z. B. nach einem Testlauf, damit die Probesongs nicht in der echten Playlist landen). Die Playlist in Spotify bleibt dabei stehen — die dort von Hand löschen.
+
+---
+
 ## 9 · Betriebsweise für den Tag
 
 - Der DJ startet als Basis eine **normale Hochzeits-Playlist** in Spotify. Wünsche werden davor geschoben, so wird es nie still.
 - Am **Hochzeitstag** den Render-Service von *Free* auf **Starter** (immer an) stellen, damit er nicht nach 15 Min einschläft. Danach wieder runter.
 - Gäste brauchen Internet für die Adresse. Über das öffentliche `onrender.com` geht das auch übers Mobilfunknetz, nicht nur übers WLAN.
 - Tischkarten-Generator: als Adresse `https://dj-bazooki.onrender.com/guest.html` eintragen und drucken.
+- **Vor dem ersten Gast** im DJ-Pult **🗑 Verlauf leeren** drücken, damit Testsongs nicht in der „So war's"-Playlist landen.
+- **Am Ende des Abends** im DJ-Pult **🎧 „So war's"-Playlist** drücken und den Link dem Brautpaar schicken. Vorher nicht den Render-Service abschalten — der Verlauf liegt in `data.json`.
 
 ---
 
