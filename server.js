@@ -1190,8 +1190,28 @@ app.post("/api/requests", async (req, res) => {
   const { guestId, name, track, mood } = req.body || {};
   if (!guestId || !track?.uri) return res.status(400).json({ error: "unvollstaendig" });
   const now = Date.now();
-  if (state.requests.some((r) => r.uri === track.uri && r.status !== "played"))
-    return res.status(409).json({ error: "schon auf der Wunschliste" });
+  // Song steht schon auf der Liste -> kein Fehler mehr, sondern automatisch ein
+  // Herz. Gleiche Regeln wie POST /api/requests/:id/vote: der eigene Wunsch und
+  // ein zweites Herz desselben Gasts zaehlen nicht, und das Stunden-Limit gilt
+  // fuers Herz nicht (es entsteht ja kein neuer Wunsch).
+  const existing = state.requests.find((r) => r.uri === track.uri && r.status !== "played");
+  if (existing) {
+    if (!Array.isArray(existing.voterIds)) existing.voterIds = [];
+    const own = existing.byId === guestId;
+    const already = !own && existing.voterIds.includes(guestId);
+    if (!own && !already) {
+      existing.voterIds.push(guestId);
+      persist();
+    }
+    return res.json({
+      ok: true,
+      alreadyListed: true,
+      hearted: !own && !already,
+      own,
+      title: existing.title,
+      hearts: 1 + existing.voterIds.length,
+    });
+  }
   // Gleicher Song nur einmal pro SONG_COOLDOWN_MS: juengsten Wunsch fuer diese URI
   // suchen (auch bereits gespielte Eintraege zaehlen) und solange sperren.
   const lastSameUri = state.requests
