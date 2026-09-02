@@ -70,6 +70,13 @@
         <div id="queue" style="display:flex;flex-direction:column;gap:8px"></div>
       </section>
 
+      <section style="margin-top:20px">
+        <div class="section-head">Verlauf · gespielt (<span id="h-count">0</span>)</div>
+        <p class="muted" style="font-size:13px;margin:-6px 0 10px">Was Spotify wirklich gespielt hat. Daraus wird am Ende die „So war's"-Playlist.</p>
+        <div id="history-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px"></div>
+        <div id="history" style="display:flex;flex-direction:column;gap:6px"></div>
+      </section>
+
       <button id="reset" class="btn ghost" style="margin-top:16px;width:100%;padding:11px">Abend zurücksetzen</button>
     </div>
   </div>
@@ -224,6 +231,107 @@
       }
     }
 
+    // --- Verlauf + „So war's"-Playlist ---
+    const SRC = {
+      wish:     { emoji: "💌", label: "Wunsch" },
+      pool:     { emoji: "🎲", label: "Pool" },
+      dj:       { emoji: "🎧", label: "DJ" },
+      vote:     { emoji: "🏆", label: "Voting" },
+      midnight: { emoji: "🕛", label: "Mitternacht" },
+      horn:     { emoji: "📯", label: "Horn" },
+      extern:   { emoji: "📻", label: "extern" },
+    };
+
+    async function makeRecap(ev) {
+      const btn = ev.currentTarget;
+      if (btn.disabled) return;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = "⟳ Erstellt…";
+      try {
+        const { ok, data } = await api("/api/history/playlist", { method: "POST", body: "{}" });
+        if (!ok) {
+          if (data.error === "scope_missing") toast("Spotify erlaubt noch kein Playlist-Schreiben. Einmal abmelden und neu anmelden — dann fragt Spotify nach dem Recht.");
+          else if (data.error === "history_empty") toast("Noch nichts im Verlauf, das lang genug gelaufen wäre.");
+          else toast("Playlist fehlgeschlagen: " + (data.error || ""));
+        } else if (data.created) {
+          toast(`Playlist „${data.name}" angelegt — ${data.added} Songs 🎉`);
+        } else if (data.added) {
+          toast(`${data.added} neue Song${data.added === 1 ? "" : "s"} nachgetragen — ${data.total} total`);
+        } else {
+          toast("Playlist ist schon aktuell.");
+        }
+      } catch (err) {
+        toast("Playlist fehlgeschlagen: " + (err?.message || err));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+        loadHistory();
+      }
+    }
+
+    // Zweistufig: der Verlauf ist die einzige Quelle für die „So war's"-Playlist,
+    // ein Fehlgriff am Fest wäre nicht rückholbar.
+    async function clearHistory(ev) {
+      const btn = ev.currentTarget;
+      const { data: h } = await api("/api/history?all=1");
+      const n = h.total || 0;
+      if (!n) { toast("Verlauf ist schon leer."); return; }
+      if (!confirm(`${n} Einträge löschen? Danach lässt sich die „So war's\"-Playlist nur noch aus dem bauen, was ab jetzt läuft.`)) return;
+      btn.disabled = true;
+      try {
+        const { ok, data } = await api("/api/history", { method: "DELETE" });
+        if (ok) toast("Verlauf geleert 🗑");
+        else if (data.error === "not_logged_in") toast("Dafür muss der DJ bei Spotify angemeldet sein.");
+        else toast("Löschen fehlgeschlagen: " + (data.error || ""));
+      } finally {
+        btn.disabled = false;
+        loadHistory();
+      }
+    }
+
+    async function loadHistory() {
+      const { ok, data } = await api("/api/history?all=1");
+      if (!ok) return;
+      $("h-count").textContent = data.total || 0;
+
+      const bar = $("history-bar");
+      bar.innerHTML = "";
+      bar.append(el("button", { class: "btn gold", style: "font-size:12px;padding:6px 12px", onclick: makeRecap },
+        "🎧 „So war's\"-Playlist"));
+      bar.append(el("button", { class: "btn ghost", style: "font-size:12px;padding:6px 12px",
+        onclick: () => { location.href = "/api/history.csv?all=1"; } }, "⬇ CSV"));
+      bar.append(el("button", { class: "btn ghost", style: "font-size:12px;padding:6px 12px", onclick: clearHistory },
+        "🗑 Verlauf leeren"));
+      bar.append(el("span", { class: "muted", style: "font-size:12px" },
+        `${data.playlistReady || 0} Songs bereit`));
+      if (data.recap) {
+        bar.append(el("a", { href: data.recap.url, target: "_blank", rel: "noopener",
+          style: "font-size:12px;color:var(--gold);text-decoration:none" },
+          `→ Playlist öffnen (${data.recap.added?.length || 0})`));
+      }
+      if (!data.canWritePlaylist) {
+        bar.append(el("span", { class: "muted", style: "font-size:12px;flex-basis:100%" },
+          "Für die Playlist einmal abmelden und neu anmelden — Spotify muss das Schreibrecht noch geben."));
+      }
+
+      const box = $("history");
+      box.innerHTML = "";
+      const items = (data.items || []).slice(-15).reverse();
+      if (!items.length) { box.append(el("div", { class: "empty" }, "Noch nichts gelaufen.")); return; }
+      for (const e of items) {
+        const s = SRC[e.source] || SRC.extern;
+        const short = e.source !== "horn" && (e.minutes || 0) < 0.75;
+        box.append(el("div", { class: "row", style: short ? "opacity:.55" : null },
+          el("div", { style: "width:44px;color:var(--dim);font-size:12.5px" }, e.time),
+          el("div", { style: "min-width:0;flex:1" },
+            el("div", { class: "truncate", style: "font-weight:600;font-size:14px" }, e.title || "—"),
+            el("div", { class: "truncate muted", style: "font-size:12px" },
+              [e.artist, `${s.emoji} ${s.label}`, e.addedBy && e.source === "wish" ? `von ${e.addedBy}` : null,
+               short ? "übersprungen" : null].filter(Boolean).join(" · ")))));
+      }
+    }
+
     async function refresh() {
       const { data: auth } = await api("/api/auth-status");
       if (!auth.loggedIn) { $("gate").style.display = ""; $("console").style.display = "none"; $("account-bar").style.display = "none"; return; }
@@ -281,6 +389,7 @@
       });
 
       loadDevices();
+      loadHistory();
     }
 
     refresh();
