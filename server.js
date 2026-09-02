@@ -43,6 +43,9 @@ const {
   MIDNIGHT_TZ = "Europe/Zurich",
   // Name der "So war's"-Playlist, die am Ende des Abends aus dem Verlauf gebaut wird.
   RECAP_PLAYLIST_NAME = "Hochzeit C&D — so war's 💍",
+  // Wunsch-Meilenstein: jeder n-te Gaeste-Wunsch des Abends wird gefeiert und
+  // laeuft als Pin quer zur Richtung. 0 => ganz aus.
+  MILESTONE_EVERY = 50,
 } = process.env;
 
 if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
@@ -65,6 +68,7 @@ const SCOPES = [
 const HOUR = 3600000;
 const LIMIT = 10;               // Wuensche pro Gast und Stunde
 const SONG_COOLDOWN_MS = 4 * HOUR;   // gleicher Song erst nach 4 Std wieder
+const MILESTONE_N = Math.max(0, Number(MILESTONE_EVERY) || 0); // jeder n-te Wunsch, 0 = aus
 
 // --- Musikrichtungen (5, Stand 30.08.2026) ------------------------------------
 // Frueher 8 (mit House/EDM, Slow/Love, Schlager und Mundart getrennt). Zusammengelegt,
@@ -628,6 +632,10 @@ const emptyState = () => ({
   history: [],
   // Angelegte "So war's"-Playlist: { id, url, name, ts, added: [uri] }.
   recap: null,
+  // Fortlaufender Zaehler aller angenommenen Gaeste-Wuensche des Abends. Zaehlt
+  // nur neu angelegte Wuensche (POST /api/requests) — Herzen, DJ-Pins und
+  // Auto-Fill nicht. Jeder MILESTONE_N-te wird gefeiert (siehe dort).
+  wishCount: 0,
 });
 // Umbenennung der Richtungen (8 -> 5, 30.08.2026). Ein data.json aus der Zeit davor
 // enthaelt noch die alten Namen; ohne Umschluesselung wuerden die Wuensche als
@@ -1084,6 +1092,8 @@ app.get("/api/state", (req, res) => {
     committedDirection: state.committedDirection || null,
     directionSwitch: directionSwitchInfo(),
     directions: state.directions || [],
+    wishCount: state.wishCount || 0,
+    milestoneEvery: MILESTONE_N,
     requests: [
       ...state.requests.map((r) => ({ ...r, weight: 1 + (r.voterIds?.length || 0) })),
       ...poolExtrasForCurrentMood(),
@@ -1231,6 +1241,11 @@ app.post("/api/requests", async (req, res) => {
   const autoMood = !MOOD_NAMES.includes(mood);
   const finalMood = autoMood ? await classifyTrack(track) : mood;
   const autoApproved = !!state.autoApprove;
+  // Wunsch-Meilenstein: jeder MILESTONE_N-te Wunsch des Abends wird gefeiert. Er
+  // geht als Pin ganz nach oben und laeuft quer zur Richtung — genau wie das
+  // Mitternachtslied, nur bleibt der Gast als Absender stehen.
+  const wishNo = state.wishCount + 1;
+  const isMilestone = MILESTONE_N > 0 && wishNo % MILESTONE_N === 0;
   const request = {
     id: uid(),
     uri: track.uri,
@@ -1240,17 +1255,27 @@ app.post("/api/requests", async (req, res) => {
     image: track.image || null,
     mood: finalMood,
     autoMood,
-    status: autoApproved ? "queued" : "pending",
-    ...(autoApproved ? { order: nextOrder() } : {}),
+    status: autoApproved || isMilestone ? "queued" : "pending",
+    ...(autoApproved || isMilestone ? { order: nextOrder() } : {}),
     voterIds: [],
     addedBy: (name || "Gast").slice(0, 24),
     byId: guestId,
     ts: now,
+    // pinned  -> queueSort und pickNextForQueue nehmen ihn vor allem anderen
+    // dj      -> keine Richtungs-Sperre, kein "wartet"-Badge (wie beim Mitternachtslied)
+    // milestone -> die Nummer, fuers Badge und den Verlauf
+    ...(isMilestone ? { pinned: true, dj: true, milestone: wishNo } : {}),
   };
   state.requests.push(request);
   state.log.push({ byId: guestId, ts: now });
+  state.wishCount = wishNo;
   persist();
-  res.json({ ok: true, remaining: LIMIT - (times.length + 1), queued: autoApproved });
+  res.json({
+    ok: true,
+    remaining: LIMIT - (times.length + 1),
+    queued: autoApproved || isMilestone,
+    milestone: isMilestone ? wishNo : null,
+  });
 });
 
 app.post("/api/requests/:id/vote", (req, res) => {
@@ -2075,6 +2100,7 @@ function historySourceFor(req, uri) {
   if (!req) return "extern";          // lief auf Spotify, kam aber nicht aus unserer Queue
   if (req.midnight) return "midnight";
   if (req.voteWin) return "vote";
+  if (req.milestone) return "milestone";
   if (req.auto) return "pool";
   if (req.dj) return "dj";
   return "wish";

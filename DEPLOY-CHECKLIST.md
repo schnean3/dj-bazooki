@@ -200,6 +200,24 @@ Der Knopf ist beliebig oft drückbar — am besten am Ende des Fests nochmal, da
 
 ---
 
+## 8f · Wunsch-Meilenstein testen
+
+Jeder **50. Wunsch** des Abends (`MILESTONE_EVERY`, 0 = aus) wird gefeiert: er geht als Pin ganz nach oben und läuft quer zur Musikrichtung — wie das Mitternachtslied, nur bleibt der Gast als Absender stehen. Gezählt werden nur **neu angelegte** Wünsche; Herzen auf bestehende Songs, DJ-Pins und Auto-Fill zählen nicht.
+
+Testen, ohne 50 Wünsche einzugeben: `MILESTONE_EVERY` temporär auf `3` setzen (Deploy abwarten), dann von drei Geräten je einen Wunsch schicken.
+
+1. Beim dritten Wunsch zeigt das Gäste-Handy den Toast **🎉 Der 3. Wunsch des Abends — „…" kommt als Nächstes!**
+2. In der DJ-Queue steht der Song zuoberst mit dem Badge **🎉 3. Wunsch**, darunter „von …".
+3. Auf `/display.html` steht er unter „Als Nächstes" auf Platz 1, mit 🎉 statt Richtungs-Emoji und der Zeile „3. Wunsch des Abends 🎉 — von …".
+4. Eine andere Richtung wählen lassen → der Song bleibt oben und bekommt **kein** „⏳ wartet"-Badge, auch wenn er aus einer anderen Richtung stammt.
+5. Im Verlauf erscheint er nach dem Abspielen mit **🎉 Meilenstein** und dem Namen.
+
+**Prüfpunkt:** `MILESTONE_EVERY` danach wieder auf `50` setzen. Der Zähler steht in `data.json` (`wishCount`) und überlebt einen Neustart — er wird nur von **„Abend zurücksetzen"** genullt. Also: nach dem Test einmal zurücksetzen, sonst starten die 50 nicht bei null.
+
+Der Meilenstein hängt nicht an der DJ-Freigabe: auch wenn „Wünsche selbst freigeben" aktiv ist, springt er direkt in die Queue. Lehnt der DJ ihn trotzdem ab, ist die Nummer verbraucht — der nächste Meilenstein kommt erst beim 100.
+
+---
+
 ## 9 · Betriebsweise für den Tag
 
 - Der DJ startet als Basis eine **normale Hochzeits-Playlist** in Spotify. Wünsche werden davor geschoben, so wird es nie still.
