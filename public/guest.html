@@ -102,10 +102,18 @@
         method: "POST",
         body: JSON.stringify({ guestId: gid, name: guestName(), track: pendingTrack }),
       });
-      if (ok) { toast(data.queued ? `„${pendingTrack.title}" ist in der Queue 🎶` : `„${pendingTrack.title}" gewünscht — wartet auf DJ-Freigabe 🎶`); $("q").value = ""; $("results").innerHTML = ""; refresh(); }
+      // Song stand schon auf der Liste -> der Server hat automatisch ein Herz gesetzt.
+      if (ok && data.alreadyListed) {
+        toast(data.own
+          ? `„${data.title || pendingTrack.title}" hast du schon gewünscht ♥`
+          : data.hearted
+            ? `Schon auf der Wunschliste — Herz gesetzt ♥ (${data.hearts})`
+            : `Schon auf der Wunschliste — dein Herz ist schon drauf ♥`);
+        $("q").value = ""; $("results").innerHTML = ""; refresh();
+      }
+      else if (ok) { toast(data.queued ? `„${pendingTrack.title}" ist in der Queue 🎶` : `„${pendingTrack.title}" gewünscht — wartet auf DJ-Freigabe 🎶`); $("q").value = ""; $("results").innerHTML = ""; refresh(); }
       else if (status === 429 && data.error === "song_cooldown") toast(`Dieses Lied wurde gerade schon gewünscht — wieder möglich in ${data.nextMin} Min.`);
       else if (status === 429) toast(`Limit erreicht. Nächster Wunsch in ${data.nextMin} Min.`);
-      else if (status === 409) toast("Schon auf der Wunschliste — gib ihm ein Herz ♥");
       else toast("Hat nicht geklappt: " + (data.error || status));
     }
 
