@@ -2224,11 +2224,11 @@ app.post("/api/history/playlist", djOnly, async (req, res) => {
     let created = false;
 
     if (!recap?.id) {
-      const meRes = await djFetch("/me");
-      if (!meRes.ok) throw new Error(`me ${meRes.status}`);
-      const me = await meRes.json();
       const name = (req.body?.name || RECAP_PLAYLIST_NAME).toString().slice(0, 100);
-      const cr = await djFetch(`/users/${encodeURIComponent(me.id)}/playlists`, {
+      // POST /users/{id}/playlists wurde im Feb-2026-Umbau fuer Development-Mode-Apps
+      // abgeschaltet und antwortet seit dem 09.03.2026 mit 403 Forbidden. Ersatz laut
+      // Migrations-Guide: POST /me/playlists — braucht die User-ID gar nicht mehr.
+      const cr = await djFetch(`/me/playlists`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
