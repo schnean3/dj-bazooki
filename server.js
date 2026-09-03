@@ -689,7 +689,7 @@ let appToken = { value: null, expires: 0 }; // Client-Credentials fuer Gaeste-Su
 const AUTO_THRESHOLD_MS = 40000; // so viel vor Songende wird ein passender Song nachgeschoben
 const DIRECTION_FALLBACK_MS = 60000; // 1 Min: Deadline fuer Notfall-Ausweiche auf eine andere Richtung
 let auto = { pushedForUri: null, slot: 0 };
-let playback = { is_playing: false, uri: null, title: null, artist: null, progress: 0, duration: 0, ts: 0 };
+let playback = { is_playing: false, uri: null, title: null, artist: null, image: null, progress: 0, duration: 0, ts: 0 };
 
 // Horn: hat keinen eigenen Takt mehr. Es wird genau einmal pro Musikrichtungs-Block
 // eingereiht, direkt bevor das Lieblingslied des Voting-Gewinners kommt.
@@ -1775,11 +1775,23 @@ async function tracksByIds(ids) {
   let apiError = false;
   for (let i = 0; i < ids.length; i += 50) {
     const chunk = ids.slice(i, i + 50);
+    const path = `/tracks?ids=${chunk.join(",")}&market=${MARKET}`;
     try {
-      const token = await getAppToken();
-      const r = await fetch(`https://api.spotify.com/v1/tracks?ids=${chunk.join(",")}&market=${MARKET}`,
-        { headers: { Authorization: "Bearer " + token } });
-      if (!r.ok) { await r.text().catch(() => {}); apiError = true; continue; }
+      // Erst App-Token. Klappt der nicht (Rechte, Rate-Limit, Netz), zweiter
+      // Versuch mit dem DJ-Token -- der laeuft am Fest ohnehin und hat mehr
+      // Rechte. Ohne diesen Fallback landet der Gast mit blosser URI in der
+      // Liste: spielbar, aber ohne Album-Bild.
+      let r = null;
+      try {
+        const token = await getAppToken();
+        r = await fetch("https://api.spotify.com/v1" + path, { headers: { Authorization: "Bearer " + token } });
+      } catch { r = null; }
+      if (r && !r.ok) { await r.text().catch(() => {}); r = null; }
+      if (!r && dj.access) {
+        try { r = await djFetch(path); } catch { r = null; }
+        if (r && !r.ok) { await r.text().catch(() => {}); r = null; }
+      }
+      if (!r) { apiError = true; continue; }
       const d = await r.json();
       for (const t of d.tracks || []) {
         if (!t?.id) continue;
@@ -1837,13 +1849,39 @@ async function loadGuests(force = false) {
   guestsMeta = { ts: Date.now(), total: out.length, resolved: out.length - unresolved.length, unresolved, error: null };
 }
 
+// Album-Bild zu einer Track-ID nachholen. Erst DJ-Token, dann App-Token. Wirft
+// nie -- im Zweifel gibt es kein Bild und die Anzeige faellt aufs Emoji zurueck.
+async function fetchTrackImage(trackId) {
+  if (!trackId) return null;
+  const path = `/tracks/${trackId}?market=${MARKET}`;
+  if (dj.access) {
+    try {
+      const r = await djFetch(path);
+      if (r.ok) { const t = await r.json(); return t?.album?.images?.[0]?.url || null; }
+    } catch {}
+  }
+  try {
+    const token = await getAppToken();
+    const r = await fetch("https://api.spotify.com/v1" + path, { headers: { Authorization: "Bearer " + token } });
+    if (r.ok) { const t = await r.json(); return t?.album?.images?.[0]?.url || null; }
+  } catch {}
+  return null;
+}
+
 // Legt einen Track ganz oben in die Queue (wie ein DJ-Pin) -- unabhaengig von der
 // gerade laufenden Richtung, und zaehlt NICHT ins 1:2 Wunsch/Pool-Verhaeltnis
 // (pickNextForQueue nimmt Pins immer zuerst, siehe dort).
 async function pinToTop(track, opts = {}) {
+  // Ein Lieblingslied aus guests.csv kann ohne Bild ankommen, wenn beim Laden der
+  // Gaesteliste nur die URI aufgeloest wurde. Hier ist der letzte Moment, es vor
+  // der Anzeige in der Queue nachzuholen.
+  if (!track.image && track.trackId) {
+    track = { ...track, image: await fetchTrackImage(track.trackId) };
+  }
   const existing = state.requests.find((r) => r.uri === track.uri && r.status !== "played");
   if (existing) {
     Object.assign(existing, { status: "queued", pinned: true, sent: false, order: nextOrder() }, opts);
+    if (!existing.image && track.image) existing.image = track.image;
     return existing;
   }
   const mood = await classifyTrack(track).catch(() => M_PARTY);
@@ -2192,7 +2230,7 @@ function recordHistory() {
     trackId: uri.startsWith("spotify:track:") ? uri.split(":")[2] : (req?.trackId || null),
     title: playback.title || req?.title || null,
     artist: playback.artist || req?.artist || null,
-    image: req?.image || null,
+    image: req?.image || playback.image || null,
     mood: req?.mood || null,
     addedBy: req?.addedBy || null,
     byId: req?.byId || null,
@@ -2349,7 +2387,7 @@ async function tick() {
   let cur;
   try {
     const r = await djFetch("/me/player/currently-playing?market=" + MARKET);
-    if (r.status === 204) { playback = { is_playing: false, uri: null, title: null, artist: null, progress: 0, duration: 0, ts: Date.now() }; return; }
+    if (r.status === 204) { playback = { is_playing: false, uri: null, title: null, artist: null, image: null, progress: 0, duration: 0, ts: Date.now() }; return; }
     if (!r.ok) return;
     cur = await r.json();
   } catch { return; }
@@ -2360,6 +2398,9 @@ async function tick() {
     uri,
     title: cur.item?.name || null,
     artist: cur.item?.artists?.map((a) => a.name).join(", ") || null,
+    // Spotify liefert das Album-Bild hier immer mit -- unabhaengig davon, ob wir
+    // beim Einreihen eines gekannt haben. Das ist unsere sichere Quelle.
+    image: cur.item?.album?.images?.[0]?.url || null,
     progress: cur.progress_ms || 0,
     duration: cur.item?.duration_ms || 0,
     ts: Date.now(),
@@ -2372,8 +2413,23 @@ async function tick() {
       const prev = state.requests.find((r) => r.id === state.nowPlaying?.id);
       if (prev && prev.id !== match.id) prev.status = "played";
       match.status = "played";
-      state.nowPlaying = { id: match.id, title: match.title, artist: match.artist, image: match.image, mood: match.mood };
+      if (!match.image && playback.image) match.image = playback.image;
+      state.nowPlaying = { id: match.id, title: match.title, artist: match.artist, image: match.image || playback.image || null, mood: match.mood };
       auto.pushedForUri = null; // neuer Song laeuft -> Guard zuruecksetzen
+      persist();
+    }
+  }
+
+  // Cover nachtragen. Ein Song kann ohne Bild in die Queue kommen -- etwa ein
+  // Lieblingslied aus guests.csv, dessen Metadaten beim Laden nicht geholt werden
+  // konnten (dann steht nur die URI). Sobald er laeuft, haben wir das Bild aus
+  // currently-playing und schreiben es in den Queue-Eintrag zurueck: damit stimmen
+  // Anzeige, Verlauf und alle drei Views.
+  if (uri && playback.image && state.nowPlaying) {
+    const npReq = state.requests.find((r) => r.id === state.nowPlaying.id);
+    if (npReq && npReq.uri === uri && (!npReq.image || !state.nowPlaying.image)) {
+      if (!npReq.image) npReq.image = playback.image;
+      if (!state.nowPlaying.image) state.nowPlaying.image = playback.image;
       persist();
     }
   }
