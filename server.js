@@ -772,6 +772,20 @@ function myTimes(guestId, now) {
   return state.log.filter((e) => e.byId === guestId && e.ts > cutoff).map((e) => e.ts).sort((a, b) => a - b);
 }
 
+// Wie viele Wuensche dem Gast in der laufenden Stunde noch bleiben. Die Gaesteseite
+// zeigt das an, damit das Limit nicht erst beim 429 sichtbar wird.
+// nextMin = Minuten bis der aelteste Eintrag aus dem Stundenfenster faellt (nur wenn leer).
+function quotaFor(guestId, now) {
+  if (!guestId) return null;
+  const times = myTimes(guestId, now);
+  const left = Math.max(0, LIMIT - times.length);
+  return {
+    left,
+    limit: LIMIT,
+    nextMin: left > 0 ? null : Math.max(1, Math.ceil((times[0] + HOUR - now) / 60000)),
+  };
+}
+
 // Anzahl Likes (Herzen) eines Wunsches.
 function likeCount(r) { return (r.voterIds?.length) || 0; }
 
@@ -1087,6 +1101,7 @@ app.get("/api/state", (req, res) => {
     switchPhase: state.switchSeq?.phase || null,
     midnight: midnightForClient(),
     vote: voteForClient(req.query.guestId),
+    quota: quotaFor(req.query.guestId, Date.now()),
     playback,
     vibe: computeVibe(),
     committedDirection: state.committedDirection || null,
