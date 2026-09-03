@@ -5,6 +5,33 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
   <title>DJ BazooKI — Wünsch dir was</title>
   <link rel="stylesheet" href="/app.css" />
+  <style>
+    /* Richtungswahl, nur Gaesteseite: Wahl und Ergebnis stecken im selben Element.
+       Vorher standen die Chips in der Seitenmitte und die Balken ganz unten - man
+       sah beim Tippen nicht, was die eigene Stimme bewirkt. Jetzt waechst der
+       Balken direkt in der Zeile, die man antippt. */
+    .dirpick{ display:flex; flex-direction:column; gap:8px; }
+    .dir-row{
+      position:relative; overflow:hidden; width:100%; text-align:left; cursor:pointer;
+      border:1px solid var(--border); border-radius:14px; background:var(--surface2);
+      padding:11px 13px; color:var(--ink); font-family:var(--body);
+      transition:border-color .18s, box-shadow .18s;
+    }
+    .dir-row .fill{ position:absolute; top:0; bottom:0; left:0; width:0; transition:width .45s ease; }
+    .dir-row .body{ position:relative; display:flex; align-items:center; gap:9px; }
+    .dir-row .nm{ font-weight:600; font-size:14.5px; line-height:1.2; flex:1; min-width:0; }
+    .dir-row .cnt{ font-size:12.5px; font-weight:600; color:var(--dim); flex-shrink:0; }
+    .dir-row.mine{ border-color:var(--gold); box-shadow:inset 0 0 0 1px var(--gold); }
+    .dir-row.mine .cnt{ color:var(--gold); }
+    .dir-row .pill{
+      flex-shrink:0; font-size:10px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase;
+      border-radius:999px; padding:3px 8px; border:1px solid var(--border);
+      color:var(--dim); background:var(--surface);
+    }
+    .dir-row .pill.live{ border-color:var(--gold); color:var(--gold); }
+    .dir-foot{ margin-top:12px; font-size:12.5px; color:var(--dim); line-height:1.55; }
+    .dir-foot b{ color:var(--ink); font-weight:600; }
+  </style>
 </head>
 <body>
   <div class="wrap">
@@ -47,9 +74,14 @@
     </section>
 
     <section style="margin-top:22px">
-      <div class="section-head">Wähl eine Richtung</div>
-      <p class="muted" style="font-size:13px;margin:-6px 0 10px">Sag, worauf du gerade Lust hast. Zählt nicht gegen deine Wünsche.</p>
-      <div id="dir-chips" class="chips"></div>
+      <div class="section-head">Wähl die Musikrichtung</div>
+      <p class="muted" style="font-size:13px;margin:-6px 0 12px">
+        Alle <span id="dir-cycle">30</span> Minuten entscheidet ihr neu: Die Richtung mit den
+        meisten Stimmen wird als Nächstes gespielt. Kostet keinen Liederwunsch — und du kannst
+        jederzeit umstimmen.
+      </p>
+      <div id="dir-chips" class="dirpick"></div>
+      <div id="dir-foot" class="dir-foot"></div>
     </section>
 
     <section style="margin-top:24px">
@@ -71,9 +103,6 @@
       <div style="text-align:center;margin-top:10px"><button id="pool-more" class="btn ghost" style="display:none"></button></div>
     </section>
 
-    <section style="margin-top:24px">
-      <div id="vibe" class="vibe"></div>
-    </section>
   </div>
 
   <!-- Zwei getrennte Wurzeln: refresh() leert modal-root im 3.5s-Takt (Voting).
@@ -83,7 +112,7 @@
   <div id="modal-root"></div>
 
   <script type="module">
-    import { MOODS, guestId, guestName, setGuestName, api, el, renderVibe, renderSwitchHint, toast, fmtClock, queueSort } from "/shared.js";
+    import { MOODS, guestId, guestName, setGuestName, api, el, renderSwitchHint, toast, fmtClock, queueSort } from "/shared.js";
 
     const gid = guestId();
     const $ = (id) => document.getElementById(id);
@@ -353,21 +382,62 @@
     /* ---------- Richtung wählen (eine pro Gast, jederzeit änderbar; ✕ hebt sie auf) ---------- */
     async function setDirection(mood) {
       await api("/api/direction", { method: "POST", body: JSON.stringify({ guestId: gid, mood }) });
-      if (mood) toast(`Richtung gewählt: ${MOODS[mood]?.emoji || "🎵"} ${mood}`);
+      toast(mood ? `${MOODS[mood]?.emoji || "🎵"} ${mood} — deine Stimme zählt` : "Stimme zurückgenommen");
       refresh();
     }
-    function renderDirections(dirs) {
-      const mine = (dirs || []).find((d) => d.byId === gid);
+
+    // Wahl UND Ergebnis in einem Block: jede Richtung ist eine antippbare Zeile, deren
+    // Fuellung zeigt, wie viele gerade dafuer sind. Dazu unten in Worten, was als
+    // Naechstes damit passiert - die Mechanik war vorher nirgends erklaert.
+    function renderDirectionPicker(data) {
+      const mine = (data.directions || []).find((d) => d.byId === gid) || null;
+      const rows = data.vibe?.rows || [];
+      const total = data.vibe?.total || 0;
+      const lead = data.vibe?.dominant || null;
+      const cur = data.committedDirection?.mood || null;
+      const weightOf = (n) => rows.find((r) => r.mood === n)?.weight || 0;
+      const max = Math.max(1, ...Object.keys(MOODS).map(weightOf));
+
       const box = $("dir-chips");
       box.innerHTML = "";
       for (const [name, m] of Object.entries(MOODS)) {
-        const active = mine && mine.mood === name;
+        const w = weightOf(name);
+        const active = mine?.mood === name;
+        const pill = name === cur
+          ? el("span", { class: "pill live" }, "läuft")
+          : (name === lead && w > 0 ? el("span", { class: "pill" }, "führt") : null);
+        // Bei der eigenen Wahl steht "du" statt einer nackten Zahl - so ist auf einen
+        // Blick klar, dass die eigene Stimme in diesem Balken drin steckt.
+        const cnt = active ? (w > 1 ? `du +${w - 1}` : "du") : (w ? String(w) : "");
         box.append(el("button", {
-          class: "chip",
-          style: active ? `background:${m.color};color:#3a2f1c;border-color:${m.color}` : "",
+          class: "dir-row" + (active ? " mine" : ""),
           onclick: () => setDirection(active ? null : name),
-        }, `${m.emoji} ${name}` + (active ? "  ✕" : "")));
+        },
+          el("div", { class: "fill", style: `width:${Math.round((w / max) * 100)}%;background:${m.color}${active ? "55" : "2b"}` }),
+          el("div", { class: "body" },
+            el("span", { style: "font-size:19px;flex-shrink:0" }, m.emoji),
+            el("span", { class: "nm" }, name),
+            pill,
+            el("span", { class: "cnt" }, cnt))));
       }
+
+      const ds = data.directionSwitch || {};
+      if (ds.cycleMs) $("dir-cycle").textContent = String(Math.round(ds.cycleMs / 60000));
+
+      let when;
+      if (ds.phase) when = "Entschieden wird gerade jetzt";
+      else if (ds.midnightHold) when = "kurz Pause, das Mitternachtslied hat Vorrang";
+      else if (ds.dwellRemainingMs > 0) when = "entschieden wird in " + fmtClock(ds.dwellRemainingMs);
+      else when = "die Entscheidung steht gleich an";
+
+      const foot = $("dir-foot");
+      foot.innerHTML = "";
+      foot.append(
+        mine
+          ? el("div", {}, "Deine Stimme: ", el("b", {}, `${MOODS[mine.mood]?.emoji || "🎵"} ${mine.mood}`), " — nochmal tippen nimmt sie zurück.")
+          : el("div", {}, "Du hast noch nicht gewählt — tipp eine Richtung an."),
+        el("div", { style: "margin-top:2px" },
+          (total ? `${total} ${total === 1 ? "Stimme" : "Stimmen"} bisher` : "Noch keine Stimme abgegeben") + " · " + when + "."));
     }
 
     /* ---------- Listen ---------- */
@@ -479,8 +549,7 @@
       renderSwitchHint($("switch"), data.directionSwitch, data.vibe, "guest");
       renderVoteTimer($("vote-timer"), data);
       renderQuota($("remaining"), data.quota);
-      renderVibe($("vibe"), data.vibe, false, "So habt ihr gewählt");
-      renderDirections(data.directions);
+      renderDirectionPicker(data);
 
       const all = data.requests.filter((r) => r.status !== "played");
       const curMood = data.committedDirection?.mood || null;

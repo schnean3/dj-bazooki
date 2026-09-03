@@ -202,7 +202,10 @@ export function renderSwitchHint(container, ds, vibe, role, showHorn = false) {
   const dwell = ds.midnightHold
     ? "Mitternachtslied hat Vorrang"
     : (ds.dwellRemainingMs > 0
-        ? (showHorn ? "Voting & Horn in " + fmtClock(ds.dwellRemainingMs) : "Voting in " + fmtClock(ds.dwellRemainingMs))
+        // Gaesteseite sagt bewusst "Entscheid": dort heisst "Voting" die Namens-Auslosung
+        // fuers Lieblingslied - zweimal dasselbe Wort fuer zwei Dinge verwirrte.
+        ? (showHorn ? "Voting & Horn in " + fmtClock(ds.dwellRemainingMs)
+                    : (role === "guest" ? "Entscheid in " : "Voting in ") + fmtClock(ds.dwellRemainingMs))
         : "Wechsel läuft gleich");
   const main = [
     el("span", { class: "to", style: `color:${heldM.color}` }, `${heldM.emoji} ${held}`),
