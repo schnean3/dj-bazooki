@@ -27,19 +27,11 @@
       <div class="toolname">Musikwünsche mit <b>DJ BazooKI</b></div>
     </div>
 
-    <div id="current-dir"></div>
-    <div id="vibe" class="vibe"></div>
-    <div id="switch"></div>
-    <div id="vote-timer" class="muted" style="font-size:12px;text-align:center;margin-top:16px"></div>
-    <div id="now" class="row now" style="margin-top:6px"></div>
+    <!-- Kompakte Zeile: was laeuft + welche Richtung. Das grosse Cover steht
+         weiter unten, damit das Suchfeld ohne Scrollen erreichbar bleibt. -->
+    <div id="now-mini"></div>
 
-    <section style="margin-top:20px">
-      <div class="section-head">Wähl eine Richtung</div>
-      <p class="muted" style="font-size:13px;margin:-6px 0 10px">Sag, worauf du gerade Lust hast. Zählt nicht gegen deine Wünsche.</p>
-      <div id="dir-chips" class="chips"></div>
-    </section>
-
-    <section style="margin-top:20px">
+    <section style="margin-top:18px">
       <div style="display:flex;justify-content:space-between;align-items:baseline">
         <div class="section-head">Wünsch dir ein Lied</div>
         <div id="remaining" style="font-size:12.5px;font-weight:600;color:var(--gold)"></div>
@@ -48,7 +40,20 @@
       <div id="results" class="grid"></div>
     </section>
 
-    <section style="margin-top:20px">
+    <section style="margin-top:22px">
+      <div class="section-head">Wähl eine Richtung</div>
+      <p class="muted" style="font-size:13px;margin:-6px 0 10px">Sag, worauf du gerade Lust hast. Zählt nicht gegen deine Wünsche.</p>
+      <div id="dir-chips" class="chips"></div>
+    </section>
+
+    <section style="margin-top:26px">
+      <div id="current-dir"></div>
+      <div id="now" class="row now"></div>
+      <div id="switch"></div>
+      <div id="vote-timer" class="muted" style="font-size:12px;text-align:center;margin-top:12px"></div>
+    </section>
+
+    <section style="margin-top:24px">
       <div class="section-head">Wunschliste (<span id="wl-count">0</span>)</div>
       <div id="wishlist" style="display:flex;flex-direction:column;gap:8px"></div>
     </section>
@@ -57,6 +62,10 @@
       <div class="section-head">Wartet auf ihre Richtung (<span id="ww-count">0</span>)</div>
       <p class="muted" style="font-size:12.5px;margin:-6px 0 10px">Kommt dran, sobald diese Richtung läuft — Herzen sammeln lohnt sich schon jetzt.</p>
       <div id="waitlist" style="display:flex;flex-direction:column;gap:8px"></div>
+    </section>
+
+    <section style="margin-top:24px">
+      <div id="vibe" class="vibe"></div>
     </section>
   </div>
 
@@ -298,6 +307,27 @@
         el("button", { class: "pill", style: voted ? `color:${MOODS[r.mood]?.color || "var(--border)"};border-color:${MOODS[r.mood]?.color || "var(--border)"}66` : "", disabled: voted ? "" : null, onclick: voted ? null : () => vote(r.id) }, `♥ ${r.weight}`));
     }
 
+    // Kopfzeile: laufender Song + laufende Richtung auf einer Zeile. Bewusst klein —
+    // das grosse Cover (#now) steht weiter unten, hier zaehlt nur die Orientierung.
+    function renderNowMini(container, np, committed) {
+      container.innerHTML = "";
+      const m = committed?.mood ? MOODS[committed.mood] : null;
+      if (!np && !m) { container.style.display = "none"; return; }
+      container.style.display = "";
+      container.className = "row";
+      const art = np?.image
+        ? el("div", { style: `width:46px;height:46px;border-radius:9px;flex-shrink:0;background:url('${np.image}') center/cover` })
+        : el("div", { style: "width:46px;height:46px;border-radius:9px;flex-shrink:0;display:grid;place-items:center;font-size:22px;background:var(--surface2)" }, np ? (MOODS[np.mood]?.emoji || "🎵") : "🎧");
+      const sub = [np?.artist, m ? `${m.emoji} ${committed.mood}` : null].filter(Boolean).join("  ·  ");
+      container.append(art,
+        el("div", { style: "min-width:0;flex:1" },
+          el("div", { class: "eyebrow", style: "color:var(--gold);font-size:11px;letter-spacing:2px;margin-bottom:2px" }, "Läuft gerade"),
+          np
+            ? el("div", { class: "truncate", style: "font-weight:600;font-size:15px" }, np.title)
+            : el("div", { class: "muted", style: "font-size:14.5px" }, "Noch nichts ausgewählt"),
+          sub ? el("div", { class: "truncate muted", style: "font-size:12.5px;margin-top:1px" }, sub) : null));
+    }
+
     function renderVoteTimer(container, voteEnabled, voteInMs) {
       container.textContent = voteEnabled && voteInMs != null
         ? "Nächstes Voting in " + fmtClock(voteInMs)
@@ -308,7 +338,8 @@
     async function refresh() {
       const { data } = await api("/api/state?guestId=" + encodeURIComponent(gid));
       renderVoteModal(data.vote);
-      renderCurrentDirection($("current-dir"), data.committedDirection);
+      renderNowMini($("now-mini"), data.nowPlaying, data.committedDirection);
+      renderCurrentDirection($("current-dir"), data.committedDirection, "Musikrichtung");
       renderVibe($("vibe"), data.vibe, false);
       renderSwitchHint($("switch"), data.directionSwitch, data.vibe, "guest");
       renderNow($("now"), data.nowPlaying);

@@ -52,7 +52,9 @@ export function el(tag, attrs = {}, ...kids) {
 // Grosse Kopfzeile: die Richtung, die JETZT tatsächlich läuft (state.committedDirection).
 // Das ist bewusst getrennt von renderVibe() darunter, das nur die Abstimmung zeigt -
 // die fuehrende Abstimmung ist nicht zwingend schon die laufende Richtung (Haltesperre/Marge).
-export function renderCurrentDirection(container, committedDirection) {
+// `label` = Text der Eyebrow. Standard "Läuft gerade" (Display, DJ-Pult); die Gaesteseite
+// setzt "Musikrichtung", weil dort direkt darunter die Song-Karte dasselbe Wort traegt.
+export function renderCurrentDirection(container, committedDirection, label = "Läuft gerade") {
   container.className = "current-dir";
   container.innerHTML = "";
   const mood = committedDirection?.mood || null;
@@ -64,7 +66,7 @@ export function renderCurrentDirection(container, committedDirection) {
 
   container.append(
     el("div", { style: "display:flex;align-items:center;gap:12px;margin-bottom:6px" },
-      el("span", { class: "eyebrow muted" }, "Läuft gerade"), m ? eq : null),
+      el("span", { class: "eyebrow muted" }, label), m ? eq : null),
     m
       ? el("div", { class: "current-dir-name" }, el("span", {}, m.emoji), el("span", { style: `color:${m.color}` }, mood))
       : el("div", { class: "muted", style: "margin:10px 0 4px;font-size:16px" }, "Richtung wird noch bestimmt…")
