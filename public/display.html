@@ -112,7 +112,6 @@
       </div>
 
       <div>
-        <div id="midnight-chip" class="chip-row" style="display:none;margin-bottom:18px"></div>
 
         <div class="panel">
           <div class="head"><div class="section-head">Als Nächstes</div></div>
@@ -132,7 +131,7 @@
   </div>
 
 <script type="module">
-import { MOODS, api, el, renderCurrentDirection, renderVibe, renderSwitchHint, fmtClock, midnightText, queueSort } from "/shared.js";
+import { MOODS, api, el, renderCurrentDirection, renderVibe, renderSwitchHint, fmtClock, queueSort } from "/shared.js";
 
 const GUEST_URL = location.origin + "/guest.html";
 
@@ -220,32 +219,21 @@ function renderUpNext(requests, nowId, curMood) {
   const host = document.getElementById("upnext");
   host.innerHTML = "";
   const onDirection = (r) => r.dj || r.auto || !curMood || r.mood === curMood;
-  const queue = requests.filter((r) => r.status === "queued" && r.id !== nowId && !r.pool && onDirection(r)).sort(queueSort).slice(0, 5);
+  const queue = requests.filter((r) => r.status === "queued" && r.id !== nowId && !r.pool && !r.midnight && onDirection(r)).sort(queueSort).slice(0, 5);
   if (!queue.length) { host.append(el("div", { class: "empty" }, "Noch nichts in der Warteschlange.")); return; }
   queue.forEach((r, i) => {
     const m = MOODS[r.mood];
     const hearts = r.weight ?? (1 + (r.voterIds?.length || 0));
     host.append(el("div", { class: "up-row" },
       el("div", { class: "up-rank" }, i + 1),
-      el("div", { class: "up-mood" }, r.midnight ? "🕛" : r.milestone ? "🎉" : (m?.emoji || "🎵")),
+      el("div", { class: "up-mood" }, r.milestone ? "🎉" : (m?.emoji || "🎵")),
       el("div", { style: "min-width:0;flex:1" },
         el("div", { class: "up-title truncate" }, r.title),
         el("div", { class: "up-artist truncate" }, r.artist),
-        r.midnight ? el("div", { class: "up-by truncate" }, "zur Mitternacht 🥂")
-          : r.milestone ? el("div", { class: "up-by truncate" }, `${r.milestone}. Wunsch des Abends 🎉 — von ${r.addedBy}`)
+        r.milestone ? el("div", { class: "up-by truncate" }, `${r.milestone}. Wunsch des Abends 🎉 — von ${r.addedBy}`)
           : (r.addedBy && r.addedBy !== "DJ BazooKI" && r.addedBy !== "DJ") ? el("div", { class: "up-by truncate" }, "von " + r.addedBy) : null),
       el("div", { class: "up-hearts" }, "♥ " + hearts)));
   });
-}
-
-// Mitternachtslied: Countdown ab 30 Min davor, danach "kommt gleich" bzw. "läuft".
-function renderMidnight(data) {
-  const host = document.getElementById("midnight-chip");
-  const txt = midnightText(data.midnight);
-  if (!txt) { host.style.display = "none"; return; }
-  host.style.display = "";
-  host.innerHTML = "";
-  host.append(el("span", { style: "font-size:20px" }, "🕛"), el("span", {}, el("b", {}, txt)));
 }
 
 // Zeigt den Countdown bis zum naechsten Voting - nur sichtbar, wenn gerade
@@ -292,7 +280,6 @@ async function refresh() {
   const { data } = await api("/api/state");
   renderHero(data.nowPlaying, data.playback, data.requests);
   renderUpNext(data.requests, data.nowPlaying?.id, data.committedDirection?.mood || null);
-  renderMidnight(data);
   renderNextVote(data);
   await renderVote(data);
   renderCurrentDirection(document.getElementById("current-dir"), data.committedDirection);

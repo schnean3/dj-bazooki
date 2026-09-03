@@ -73,7 +73,9 @@ export function renderCurrentDirection(container, committedDirection, label = "L
   );
 }
 
-export function renderVibe(container, vibe, big) {
+// `label` = Text der Eyebrow. Standard "Stimmung auf der Tanzfläche"; die Gaesteseite
+// setzt "So habt ihr gewählt", weil dort direkt darueber schon eine Richtungs-Karte steht.
+export function renderVibe(container, vibe, big, label = "Stimmung auf der Tanzfläche") {
   container.className = "vibe" + (big ? " big" : "");
   container.innerHTML = "";
   const dom = vibe.dominant;
@@ -85,7 +87,7 @@ export function renderVibe(container, vibe, big) {
 
   container.append(
     el("div", { style: "display:flex;align-items:center;gap:12px;margin-bottom:4px" },
-      el("span", { class: "eyebrow muted" }, "Stimmung auf der Tanzfläche"), dom ? eq : null),
+      el("span", { class: "eyebrow muted" }, label), dom ? eq : null),
     dom
       ? el("div", { class: "dom" }, el("span", {}, MOODS[dom]?.emoji || "🎵"), el("span", { style: `color:${domColor}` }, dom))
       : el("div", { class: "muted", style: "margin:10px 0 16px;font-size:16px" }, "Noch keine Wünsche. Sobald etwas reinkommt, zeigt sich hier die Richtung.")

@@ -27,17 +27,23 @@
       <div class="toolname">Musikwünsche mit <b>DJ BazooKI</b></div>
     </div>
 
-    <!-- Kompakte Zeile: was laeuft + welche Richtung. Das grosse Cover steht
-         weiter unten, damit das Suchfeld ohne Scrollen erreichbar bleibt. -->
-    <div id="now-mini"></div>
+    <!-- Name: jederzeit sicht- und aenderbar. Ersetzt den alten prompt(), der in
+         In-App-Browsern unterdrueckt wird und keinen zweiten Versuch zuliess. -->
+    <div id="you" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px"></div>
 
-    <section style="margin-top:18px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline">
+    <!-- EINE Kopfkarte: laufender Song + laufende Richtung. Ersetzt die frueheren
+         vier Kacheln (now-mini, current-dir, grosses Cover, Richtungszeile). -->
+    <div id="head-card"></div>
+    <div id="switch"></div>
+    <div id="vote-timer" class="muted" style="font-size:12px;text-align:center;margin-top:10px"></div>
+
+    <section style="margin-top:20px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
         <div class="section-head">Wünsch dir ein Lied</div>
-        <div id="remaining" style="font-size:12.5px;font-weight:600;color:var(--gold)"></div>
+        <div id="remaining" style="font-size:12.5px;font-weight:600;color:var(--gold);text-align:right;flex-shrink:0"></div>
       </div>
       <input id="q" class="input" placeholder="Song oder Künstler suchen…" autocomplete="off" />
-      <div id="results" class="grid"></div>
+      <div id="results" style="display:flex;flex-direction:column;gap:8px;margin-top:10px"></div>
     </section>
 
     <section style="margin-top:22px">
@@ -46,22 +52,23 @@
       <div id="dir-chips" class="chips"></div>
     </section>
 
-    <section style="margin-top:26px">
-      <div id="current-dir"></div>
-      <div id="now" class="row now"></div>
-      <div id="switch"></div>
-      <div id="vote-timer" class="muted" style="font-size:12px;text-align:center;margin-top:12px"></div>
-    </section>
-
     <section style="margin-top:24px">
-      <div class="section-head">Wunschliste (<span id="wl-count">0</span>)</div>
+      <div class="section-head">Kommt als Nächstes (<span id="wl-count">0</span>)</div>
+      <p class="muted" style="font-size:12.5px;margin:-6px 0 10px">Reihenfolge nach Herzen — ein Herz schiebt ein Lied nach oben.</p>
       <div id="wishlist" style="display:flex;flex-direction:column;gap:8px"></div>
     </section>
 
     <section id="waitsec" style="margin-top:20px;display:none">
-      <div class="section-head">Wartet auf ihre Richtung (<span id="ww-count">0</span>)</div>
-      <p class="muted" style="font-size:12.5px;margin:-6px 0 10px">Kommt dran, sobald diese Richtung läuft — Herzen sammeln lohnt sich schon jetzt.</p>
+      <div class="section-head">Wartet auf seine Richtung (<span id="ww-count">0</span>)</div>
+      <p class="muted" style="font-size:12.5px;margin:-6px 0 10px">Diese Lieder kommen, sobald ihre Richtung dran ist — Herzen sammeln lohnt sich schon jetzt.</p>
       <div id="waitlist" style="display:flex;flex-direction:column;gap:8px"></div>
+    </section>
+
+    <section id="poolsec" style="margin-top:20px;display:none">
+      <div class="section-head">Aus der Hochzeitsplaylist (<span id="pl-count">0</span>)</div>
+      <p class="muted" style="font-size:12.5px;margin:-6px 0 10px">Lieder, die Caro &amp; Daniel vorbereitet haben. Ein Herz holt eines davon nach vorn.</p>
+      <div id="poollist" style="display:flex;flex-direction:column;gap:8px"></div>
+      <div style="text-align:center;margin-top:10px"><button id="pool-more" class="btn ghost" style="display:none"></button></div>
     </section>
 
     <section style="margin-top:24px">
@@ -69,21 +76,65 @@
     </section>
   </div>
 
+  <!-- Zwei getrennte Wurzeln: refresh() leert modal-root im 3.5s-Takt (Voting).
+       Name- und Bestaetigungs-Blatt haengen darum in sheet-root, sonst wuerden sie
+       waehrend der Eingabe weggeraeumt. modal-root steht spaeter im DOM -> Voting liegt oben. -->
+  <div id="sheet-root"></div>
   <div id="modal-root"></div>
 
   <script type="module">
-    import { MOODS, guestId, guestName, setGuestName, api, el, renderVibe, renderNow, renderSwitchHint, renderCurrentDirection, toast, fmtClock } from "/shared.js";
+    import { MOODS, guestId, guestName, setGuestName, api, el, renderVibe, renderSwitchHint, toast, fmtClock, queueSort } from "/shared.js";
 
     const gid = guestId();
-    if (!guestName()) {
-      const n = prompt("Wie heisst du? (erscheint bei deinen Wünschen)", "");
-      if (n) setGuestName(n.trim());
+    const $ = (id) => document.getElementById(id);
+    let lastQuota = null;      // fuers Bestaetigungs-Blatt, ohne extra Request
+    let poolExpanded = false;
+    const POOL_PREVIEW = 6;
+
+    /* ---------- Name ---------- */
+    function renderYou() {
+      const box = $("you");
+      box.innerHTML = "";
+      const n = guestName();
+      box.append(
+        el("div", { class: "truncate", style: "font-size:13px;min-width:0" },
+          n ? el("span", { class: "muted" }, "Du wünschst als ") : el("span", { class: "muted" }, "Noch kein Name — deine Wünsche laufen anonym."),
+          n ? el("b", { style: "color:var(--gold)" }, n) : null),
+        el("button", { class: "btn ghost", style: "flex-shrink:0;font-size:12px;padding:6px 10px", onclick: () => openNameSheet(false) },
+          n ? "ändern" : "Name eintragen"));
     }
 
-    const $ = (id) => document.getElementById(id);
-    let pendingTrack = null;
+    function closeSheet() { $("sheet-root").innerHTML = ""; }
 
-    // --- Suche (debounced) ---
+    function openNameSheet(first) {
+      const root = $("sheet-root");
+      root.innerHTML = "";
+      const input = el("input", { class: "input", placeholder: "Dein Name", value: guestName(), maxlength: "24", autocomplete: "name", style: "margin-top:12px" });
+      const save = () => {
+        const v = input.value.trim().slice(0, 24);
+        if (!v) return;
+        setGuestName(v);
+        closeSheet();
+        renderYou();
+        toast(`Alles klar, ${v} 👋`);
+      };
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
+      const modal = el("div", { class: "modal" },
+        el("div", { class: "muted eyebrow", style: "font-size:11px;letter-spacing:2px" }, first ? "Willkommen" : "Dein Name"),
+        el("div", { style: "font-family:var(--display);font-size:23px;font-weight:600;margin:4px 0 2px" }, "Wie heisst du?"),
+        el("div", { class: "muted", style: "font-size:13px" }, "Der Name steht bei deinen Wünschen — auf dem Beamer und bei den anderen Gästen."),
+        input,
+        el("div", { style: "display:flex;gap:8px;margin-top:14px" },
+          el("button", { class: "btn", style: "flex:1;padding:12px", onclick: () => closeSheet() }, first ? "Später" : "Abbrechen"),
+          el("button", { class: "btn gold", style: "flex:2;padding:12px", onclick: save }, "Passt")));
+      root.append(el("div", { class: "overlay", onclick: (e) => { if (e.target.classList.contains("overlay")) closeSheet(); } }, modal));
+      setTimeout(() => input.focus(), 60);
+    }
+
+    if (!guestName()) openNameSheet(true);
+    renderYou();
+
+    /* ---------- Suche ---------- */
     let searchTimer = null;
     $("q").addEventListener("input", (e) => {
       clearTimeout(searchTimer);
@@ -97,24 +148,56 @@
       const { data } = await api("/api/search?q=" + encodeURIComponent(q));
       box.innerHTML = "";
       for (const t of data.tracks || []) {
-        box.append(el("button", { class: "card", style: "cursor:pointer;text-align:left", onclick: () => submit(t) },
-          el("div", { class: "truncate", style: "font-weight:600" }, t.title),
-          el("div", { class: "truncate muted", style: "font-size:12.5px" }, t.artist)));
+        box.append(el("button", { class: "row", style: "cursor:pointer;text-align:left;width:100%", onclick: () => openConfirm(t) },
+          cover(t.image, 44, "🎵"),
+          el("div", { style: "min-width:0;flex:1" },
+            el("div", { class: "truncate", style: "font-weight:600;font-size:14.5px" }, t.title),
+            el("div", { class: "truncate muted", style: "font-size:12.5px" }, t.artist)),
+          el("span", { class: "pill", style: "color:var(--gold);border-color:var(--gold)66" }, "wünschen")));
       }
       if (!(data.tracks || []).length) box.append(el("div", { class: "empty" }, "Nichts gefunden. Anders schreiben?"));
     }
 
-    // --- Wunsch direkt senden (Richtung wird automatisch erkannt) ---
+    function cover(url, size, fallback) {
+      return url
+        ? el("div", { style: `width:${size}px;height:${size}px;border-radius:10px;flex-shrink:0;background:url('${url}') center/cover` })
+        : el("div", { style: `width:${size}px;height:${size}px;border-radius:10px;flex-shrink:0;display:grid;place-items:center;font-size:${Math.round(size * 0.42)}px;background:var(--surface2)` }, fallback);
+    }
+
+    // Ein Tipper auf ein Suchergebnis kostete bisher sofort einen von 10 Wuenschen.
+    // Dazwischen liegt jetzt ein Blatt mit Cover und Rest-Kontingent.
+    function openConfirm(track) {
+      const root = $("sheet-root");
+      root.innerHTML = "";
+      const q = lastQuota;
+      const blocked = !!(q && q.left <= 0);
+      const note = blocked
+        ? `Dein Stunden-Limit ist ausgeschöpft. In ${q.nextMin} Min geht wieder einer.`
+        : q ? `Danach hast du noch ${Math.max(0, q.left - 1)} von ${q.limit} Wünschen.` : "";
+      const modal = el("div", { class: "modal" },
+        el("div", { style: "display:flex;gap:12px;align-items:center" },
+          cover(track.image, 72, "🎵"),
+          el("div", { style: "min-width:0" },
+            el("div", { class: "muted eyebrow", style: "font-size:11px;letter-spacing:2px" }, "Dein Wunsch"),
+            el("div", { style: "font-family:var(--display);font-size:22px;font-weight:600;line-height:1.2;margin-top:2px" }, track.title),
+            el("div", { class: "truncate muted", style: "font-size:13px" }, track.artist))),
+        note ? el("div", { class: "muted", style: "font-size:13px;margin:14px 0 0" }, note) : null,
+        el("div", { style: "display:flex;gap:8px;margin-top:14px" },
+          el("button", { class: "btn", style: "flex:1;padding:12px", onclick: () => closeSheet() }, "Abbrechen"),
+          el("button", { class: "btn gold", style: "flex:2;padding:12px", disabled: blocked ? "" : null, onclick: blocked ? null : () => { closeSheet(); submit(track); } }, "♥ Wünschen")));
+      root.append(el("div", { class: "overlay", onclick: (e) => { if (e.target.classList.contains("overlay")) closeSheet(); } }, modal));
+    }
+
+    /* ---------- Wunsch senden ---------- */
     async function submit(track) {
-      pendingTrack = track;
       const { ok, status, data } = await api("/api/requests", {
         method: "POST",
-        body: JSON.stringify({ guestId: gid, name: guestName(), track: pendingTrack }),
+        body: JSON.stringify({ guestId: gid, name: guestName(), track }),
       });
       // Song stand schon auf der Liste -> der Server hat automatisch ein Herz gesetzt.
       if (ok && data.alreadyListed) {
         toast(data.own
-          ? `„${data.title || pendingTrack.title}" hast du schon gewünscht ♥`
+          ? `„${data.title || track.title}" hast du schon gewünscht ♥`
           : data.hearted
             ? `Schon auf der Wunschliste — Herz gesetzt ♥ (${data.hearts})`
             : `Schon auf der Wunschliste — dein Herz ist schon drauf ♥`);
@@ -122,8 +205,8 @@
       }
       else if (ok) {
         toast(data.milestone
-          ? `🎉 Der ${data.milestone}. Wunsch des Abends — „${pendingTrack.title}" kommt als Nächstes!`
-          : data.queued ? `„${pendingTrack.title}" ist in der Queue 🎶` : `„${pendingTrack.title}" gewünscht — wartet auf DJ-Freigabe 🎶`);
+          ? `🎉 Der ${data.milestone}. Wunsch des Abends — „${track.title}" kommt als Nächstes!`
+          : data.queued ? `„${track.title}" ist in der Queue 🎶` : `„${track.title}" gewünscht — wartet auf DJ-Freigabe 🎶`);
         $("q").value = ""; $("results").innerHTML = ""; refresh();
       }
       else if (status === 429 && data.error === "song_cooldown") toast(`Dieses Lied wurde gerade schon gewünscht — wieder möglich in ${data.nextMin} Min.`);
@@ -140,7 +223,7 @@
       refresh();
     }
 
-    // --- Voting: "wer bestimmt den naechsten Song" (Pop-up, alle ~20 Min) ---
+    /* ---------- Voting-Popup (alle ~30 Min, am Blockende) ---------- */
     // dismissed: Gast hat selbst gewählt -> Pop-up blendet 1.5s danach lokal aus,
     // kommt aber zwingend zurück sobald der Server die Runde schliesst (Ergebnis).
     let voteState = { id: null, choiceMade: false, dismissed: false, tickTimer: null, dismissTimer: null };
@@ -192,6 +275,7 @@
       // Waehrend offener Runde: nach eigenem Vote blendet castVote() nach 1.5s lokal aus.
       if (voteState.dismissed) { root.innerHTML = ""; return; }
 
+      closeSheet(); // ein offenes Name-/Bestaetigungs-Blatt weicht dem Voting
       let modal = $("vote-modal");
       if (!modal) {
         modal = el("div", { class: "modal", id: "vote-modal" });
@@ -266,7 +350,7 @@
       refresh();
     }
 
-    // --- Richtung wählen (eine pro Gast, jederzeit änderbar; ✕ hebt sie auf) ---
+    /* ---------- Richtung wählen (eine pro Gast, jederzeit änderbar; ✕ hebt sie auf) ---------- */
     async function setDirection(mood) {
       await api("/api/direction", { method: "POST", body: JSON.stringify({ guestId: gid, mood }) });
       if (mood) toast(`Richtung gewählt: ${MOODS[mood]?.emoji || "🎵"} ${mood}`);
@@ -286,89 +370,176 @@
       }
     }
 
-    // Eine Wunsch-Zeile bauen (für beide Listen gleich).
-    function wishRow(r, np) {
+    /* ---------- Listen ---------- */
+    // Eine Wunsch-Zeile. kind: "now" (laeuft/kommt bald), "wait" (falsche Richtung),
+    // "pool" (aus der Hochzeitsplaylist, noch niemandes Wunsch).
+    function wishRow(r, np, kind, rank) {
       const mine = r.byId === gid;
-      const voted = mine || r.voterIds.includes(gid);
+      const voted = mine || (r.voterIds || []).includes(gid);
       const playing = np?.id === r.id;
+      const m = MOODS[r.mood];
+
       const badge = playing
-        ? el("span", { class: "badge", style: "background:var(--gold)" }, "läuft")
+        ? el("span", { class: "badge", style: "background:var(--gold)" }, "läuft jetzt")
         : r.milestone
         ? el("span", { class: "badge", style: "background:var(--gold);color:#1b1b1b" }, `🎉 ${r.milestone}. Wunsch`)
+        : kind === "pool"
+        ? null
+        : kind === "wait"
+        ? el("span", { class: "badge", style: "background:var(--border);color:var(--dim)" }, "wartet")
         : r.status === "queued"
-        ? el("span", { class: "badge", style: `background:${MOODS[r.mood]?.color || "var(--border)"}` }, "in Queue")
-        : el("span", { class: "badge", style: "background:var(--border);color:var(--dim)" }, "wartet");
+        ? el("span", { class: "badge", style: `background:${m?.color || "var(--border)"}` }, "kommt bald")
+        : el("span", { class: "badge", style: "background:var(--border);color:var(--dim)" }, "wird geprüft");
+
+      // "wartet" allein sagt einem Gast nichts - hier steht, worauf.
+      const waitLine = kind === "wait"
+        ? el("div", { class: "truncate", style: `font-size:12px;margin-top:2px;color:${m?.color || "var(--dim)"};font-weight:600` },
+            `kommt, wenn ${m?.emoji || "🎵"} ${r.mood} läuft`)
+        : null;
+
+      const heart = kind === "pool"
+        ? el("button", { class: "pill", style: "color:var(--gold);border-color:var(--gold)66", onclick: () => vote(r.id) }, "♥ wünschen")
+        : el("button", {
+            class: "pill",
+            style: voted ? `color:${m?.color || "var(--border)"};border-color:${m?.color || "var(--border)"}66` : "",
+            title: voted ? "Dein Herz ist schon drauf" : "Herz geben — schiebt das Lied nach oben",
+            disabled: voted ? "" : null,
+            onclick: voted ? null : () => vote(r.id),
+          }, `♥ ${r.weight}`);
+
       return el("div", { class: "row" },
+        rank != null ? el("div", { style: "width:20px;flex-shrink:0;text-align:center;font-family:var(--display);font-size:17px;color:var(--dim)" }, rank) : null,
         el("div", { style: "min-width:0;flex:1" },
           el("div", { style: "display:flex;align-items:center;gap:8px" },
             el("span", { class: "truncate", style: "font-weight:600" }, r.title), badge),
-          el("div", { class: "truncate muted", style: "font-size:12.5px" }, `${r.artist} · ${MOODS[r.mood]?.emoji || "🎵"} ${r.mood}`),
-          r.addedBy ? el("div", { class: "truncate", style: "font-size:12px;color:var(--gold);margin-top:2px" }, `von ${mine ? "dir" : r.addedBy}`) : null),
-        el("button", { class: "pill", style: voted ? `color:${MOODS[r.mood]?.color || "var(--border)"};border-color:${MOODS[r.mood]?.color || "var(--border)"}66` : "", disabled: voted ? "" : null, onclick: voted ? null : () => vote(r.id) }, `♥ ${r.weight}`));
+          el("div", { class: "truncate muted", style: "font-size:12.5px" }, `${r.artist} · ${m?.emoji || "🎵"} ${r.mood}`),
+          waitLine,
+          (kind !== "pool" && r.addedBy) ? el("div", { class: "truncate", style: "font-size:12px;color:var(--gold);margin-top:2px" }, `von ${mine ? "dir" : r.addedBy}`) : null),
+        heart);
     }
 
-    // Kopfzeile: laufender Song + laufende Richtung auf einer Zeile. Bewusst klein —
-    // das grosse Cover (#now) steht weiter unten, hier zaehlt nur die Orientierung.
-    function renderNowMini(container, np, committed) {
+    /* ---------- Kopfkarte ---------- */
+    function renderHeadCard(container, np, committed) {
+      const mood = committed?.mood || null;
+      const m = mood ? MOODS[mood] : null;
+      container.className = "current-dir";
+      container.style.padding = "14px 16px 16px";
+      container.style.marginBottom = "0";
+      container.style.boxShadow = m ? `0 0 60px -22px ${m.color}` : "0 6px 24px -18px #6b5a34";
       container.innerHTML = "";
-      const m = committed?.mood ? MOODS[committed.mood] : null;
-      if (!np && !m) { container.style.display = "none"; return; }
-      container.style.display = "";
-      container.className = "row";
-      const art = np?.image
-        ? el("div", { style: `width:46px;height:46px;border-radius:9px;flex-shrink:0;background:url('${np.image}') center/cover` })
-        : el("div", { style: "width:46px;height:46px;border-radius:9px;flex-shrink:0;display:grid;place-items:center;font-size:22px;background:var(--surface2)" }, np ? (MOODS[np.mood]?.emoji || "🎵") : "🎧");
-      const sub = [np?.artist, m ? `${m.emoji} ${committed.mood}` : null].filter(Boolean).join("  ·  ");
-      container.append(art,
+
+      container.append(el("div", { style: "display:flex;align-items:center;gap:12px" },
+        cover(np?.image, 64, np ? (MOODS[np.mood]?.emoji || "🎵") : "🎧"),
         el("div", { style: "min-width:0;flex:1" },
-          el("div", { class: "eyebrow", style: "color:var(--gold);font-size:11px;letter-spacing:2px;margin-bottom:2px" }, "Läuft gerade"),
+          el("div", { class: "eyebrow", style: "color:var(--gold);font-size:11px;letter-spacing:2px;margin-bottom:3px" }, "Läuft gerade"),
           np
-            ? el("div", { class: "truncate", style: "font-weight:600;font-size:15px" }, np.title)
-            : el("div", { class: "muted", style: "font-size:14.5px" }, "Noch nichts ausgewählt"),
-          sub ? el("div", { class: "truncate muted", style: "font-size:12.5px;margin-top:1px" }, sub) : null));
+            ? el("div", { class: "truncate", style: "font-weight:600;font-size:16px;line-height:1.25" }, np.title)
+            : el("div", { class: "muted", style: "font-size:15px" }, "Noch nichts ausgewählt"),
+          np ? el("div", { class: "truncate muted", style: "font-size:13px;margin-top:1px" }, np.artist) : null)));
+
+      const eq = el("div", { class: "eq", style: "height:14px" });
+      if (m) for (let i = 0; i < 5; i++) eq.append(el("i", { style: `background:${m.color};animation-delay:${i * 130}ms` }));
+
+      container.append(
+        el("div", { style: "border-top:1px solid var(--border);margin:13px 0 9px" }),
+        el("div", { style: "display:flex;align-items:center;gap:10px" },
+          el("span", { class: "eyebrow muted", style: "font-size:11px;letter-spacing:2px" }, "Musikrichtung"), m ? eq : null),
+        m
+          ? el("div", { style: `font-family:var(--display);font-size:26px;font-weight:600;display:flex;align-items:center;gap:9px;margin-top:2px;line-height:1.15;flex-wrap:wrap;color:${m.color}` },
+              el("span", {}, m.emoji), el("span", { style: "min-width:0;overflow-wrap:break-word" }, mood))
+          : el("div", { class: "muted", style: "font-size:15px;margin-top:3px" }, "wird noch bestimmt — wähl unten mit"));
     }
 
-    function renderVoteTimer(container, voteEnabled, voteInMs) {
-      container.textContent = voteEnabled && voteInMs != null
-        ? "Nächstes Voting in " + fmtClock(voteInMs)
+    function renderQuota(container, q) {
+      lastQuota = q || null;
+      if (!q) { container.textContent = ""; return; }
+      if (q.left > 0) {
+        container.textContent = `noch ${q.left} von ${q.limit}`;
+        container.style.color = "var(--gold)";
+      } else {
+        container.textContent = `Limit erreicht — in ${q.nextMin} Min wieder`;
+        container.style.color = "var(--dim)";
+      }
+    }
+
+    // Nur zeigen, wenn der Richtungs-Hinweis darueber schweigt (noch keine Richtung
+    // festgelegt) - sonst stuende derselbe Countdown zweimal untereinander.
+    function renderVoteTimer(container, data) {
+      const hintVisible = !!(data.directionSwitch && data.directionSwitch.current && MOODS[data.directionSwitch.current]);
+      container.textContent = (!hintVisible && data.voteEnabled && data.voteInMs != null)
+        ? "Nächstes Voting in " + fmtClock(data.voteInMs)
         : "";
     }
 
-    // --- Polling / Render ---
+    /* ---------- Polling / Render ---------- */
     async function refresh() {
       const { data } = await api("/api/state?guestId=" + encodeURIComponent(gid));
       renderVoteModal(data.vote);
-      renderNowMini($("now-mini"), data.nowPlaying, data.committedDirection);
-      renderCurrentDirection($("current-dir"), data.committedDirection, "Musikrichtung");
-      renderVibe($("vibe"), data.vibe, false);
+      renderHeadCard($("head-card"), data.nowPlaying, data.committedDirection);
       renderSwitchHint($("switch"), data.directionSwitch, data.vibe, "guest");
-      renderNow($("now"), data.nowPlaying);
-      renderVoteTimer($("vote-timer"), data.voteEnabled, data.voteInMs);
+      renderVoteTimer($("vote-timer"), data);
+      renderQuota($("remaining"), data.quota);
+      renderVibe($("vibe"), data.vibe, false, "So habt ihr gewählt");
       renderDirections(data.directions);
 
       const all = data.requests.filter((r) => r.status !== "played");
       const curMood = data.committedDirection?.mood || null;
       const byLove = (a, b) => b.weight - a.weight || a.ts - b.ts;
-      // Wünsche der laufenden Richtung spielen jetzt; andere warten auf ihre Richtung.
       // Quer zur Richtung laufende Eintraege (DJ-Pin, Mitternachtslied, Meilenstein,
-      // Auto-Fill) stehen immer in der aktuellen Liste — sie warten auf nichts.
+      // Auto-Fill) stehen immer in der aktuellen Liste - sie warten auf nichts.
       const onDirection = (r) => r.dj || r.auto || !curMood || r.mood === curMood;
-      const nowList = all.filter(onDirection).sort(byLove);
-      const waitList = all.filter((r) => !onDirection(r)).sort(byLove);
+      // Pool-Eintraege sind noch niemandes Wunsch. Frueher standen sie mit einem
+      // "wartet"-Badge mitten in der Wunschliste - das las sich wie ein Fehler.
+      // Das Mitternachtslied bleibt eine Ueberraschung: es taucht bei den Gaesten
+      // weder in der Liste noch als Countdown auf - erst wenn es laeuft, steht es
+      // oben in der Kopfkarte. Beamer und DJ-Pult zeigen es weiterhin.
+      const wishes = all.filter((r) => !r.pool && !r.midnight);
+      const nowId = data.nowPlaying?.id || null;
+      const inDir = wishes.filter(onDirection);
+      // Reihenfolge wie im DJ-Pult und auf dem Beamer (queueSort): laufender Song zuoberst,
+      // dann die freigegebene Queue, zuletzt was noch auf die DJ-Freigabe wartet.
+      // Nummeriert wird nur die Queue - alles andere haette keine echte Position.
+      const nowList = [
+        ...inDir.filter((r) => r.id === nowId),
+        ...inDir.filter((r) => r.id !== nowId && r.status === "queued").sort(queueSort),
+        ...inDir.filter((r) => r.id !== nowId && r.status !== "queued").sort(byLove),
+      ];
+      const waitList = wishes.filter((r) => !onDirection(r)).sort(queueSort);
+      const poolList = all.filter((r) => r.pool);
 
       $("wl-count").textContent = nowList.length;
       const wl = $("wishlist");
       wl.innerHTML = "";
-      if (!all.length) wl.append(el("div", { class: "empty" }, "Noch leer. Sei die erste Person mit einem Wunsch."));
+      if (!wishes.length) wl.append(el("div", { class: "empty" }, "Noch leer. Sei die erste Person mit einem Wunsch."));
       else if (!nowList.length) wl.append(el("div", { class: "empty" }, "Für die aktuelle Richtung noch kein Wunsch."));
-      for (const r of nowList) wl.append(wishRow(r, data.nowPlaying));
+      let rank = 0;
+      for (const r of nowList) {
+        const ranked = r.id !== nowId && r.status === "queued";
+        wl.append(wishRow(r, data.nowPlaying, "now", ranked ? ++rank : null));
+      }
 
       $("ww-count").textContent = waitList.length;
       $("waitsec").style.display = waitList.length ? "" : "none";
       const ww = $("waitlist");
       ww.innerHTML = "";
-      for (const r of waitList) ww.append(wishRow(r, data.nowPlaying));
+      for (const r of waitList) ww.append(wishRow(r, data.nowPlaying, "wait", null));
+
+      $("pl-count").textContent = poolList.length;
+      $("poolsec").style.display = poolList.length ? "" : "none";
+      const pl = $("poollist");
+      pl.innerHTML = "";
+      const shown = poolExpanded ? poolList : poolList.slice(0, POOL_PREVIEW);
+      for (const r of shown) pl.append(wishRow(r, data.nowPlaying, "pool", null));
+      const more = $("pool-more");
+      if (poolList.length > POOL_PREVIEW) {
+        more.style.display = "";
+        more.textContent = poolExpanded ? "weniger zeigen" : `alle ${poolList.length} zeigen`;
+      } else {
+        more.style.display = "none";
+      }
     }
+
+    $("pool-more").addEventListener("click", () => { poolExpanded = !poolExpanded; refresh(); });
 
     refresh();
     setInterval(refresh, 3500);
