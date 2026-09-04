@@ -1116,6 +1116,91 @@ app.get("/api/state", (req, res) => {
   });
 });
 
+/* ------------------------------- Statistiken -------------------------------- */
+// Zahlen fuer das rotierende Statistik-Feld der Display-View. Bewusst ein eigener
+// Endpoint statt ein Anhaengsel an /api/state: die Anzeige wechselt nur alle paar
+// Sekunden, /api/state holt dagegen jedes Gaestetelefon im Sekundentakt.
+//
+// Horn und Mitternachtslied tauchen in KEINER Statistik auf — beides ist eine
+// Ueberraschung, und die Display-View ist die Leinwand, auf der sie auffliegen wuerde.
+const STAT_SYS_IDS = new Set(["dj", "vote", "midnight"]);
+
+// Was als Gaeste-Wunsch zaehlt: alles, was ein Gast selbst angelegt hat. Auto-Fill
+// (Pool), DJ-Pins, das Lieblingslied des Voting-Gewinners und das Mitternachtslied
+// fallen ueber byId raus. Meilenstein-Wuensche tragen zwar dj:true, gehoeren aber
+// dem Gast und zaehlen deshalb mit.
+function guestWishes() {
+  return (state.requests || []).filter((r) => r && !r.auto && r.byId && !STAT_SYS_IDS.has(r.byId));
+}
+
+app.get("/api/stats", (_req, res) => {
+  const wishes = guestWishes();
+  const curMood = state.committedDirection?.mood || null;
+
+  // Wunsch-Koenig:in — gruppiert nach byId, nicht nach Name: derselbe Name kann von
+  // zwei Geraeten kommen, und der Name ist Freitext. Angezeigt wird der zuletzt
+  // benutzte Name. Gleichstand: mehr Herzen gewinnt, dann der fruehere Wunsch.
+  const byGuest = new Map();
+  for (const r of wishes) {
+    const g = byGuest.get(r.byId) || { name: r.addedBy, count: 0, hearts: 0, first: r.ts || 0, lastTs: -1 };
+    g.count++;
+    g.hearts += r.voterIds?.length || 0;
+    if ((r.ts || 0) < g.first) g.first = r.ts || 0;
+    if ((r.ts || 0) >= g.lastTs) { g.name = r.addedBy; g.lastTs = r.ts || 0; }
+    byGuest.set(r.byId, g);
+  }
+  const king = [...byGuest.values()]
+    .sort((a, b) => b.count - a.count || b.hearts - a.hearts || a.first - b.first)[0] || null;
+
+  // Meiste Herzen. `hearts` ist das Gewicht wie ueberall in den Views (1 + Herzen),
+  // `votes` die reinen Herzen — daran haengt, ob die Kachel ueberhaupt gezeigt wird.
+  const hearted = wishes
+    .filter((r) => (r.voterIds?.length || 0) > 0)
+    .sort((a, b) => b.voterIds.length - a.voterIds.length || (a.ts || 0) - (b.ts || 0))[0] || null;
+
+  // Warteliste: Gaeste-Wuensche, die auf ihre Richtung warten. Gleicher Ausdruck wie
+  // das "wartet"-Badge in dj.html (offDir) — nur gezaehlt, keine Titel.
+  const waiting = curMood
+    ? (state.requests || []).filter((r) =>
+        r.status === "queued" && !r.dj && !r.auto && r.mood !== curMood && r.id !== state.nowPlaying?.id).length
+    : 0;
+
+  // Meistgespielter Interpret aus dem Verlauf. Nur Songs, die wirklich gelaufen sind
+  // (HISTORY_MIN_MS), ohne Horn und Mitternachtslied. Gezaehlt wird der erste
+  // genannte Interpret — sonst gewaenne bei jedem Feature der Gast-Act mit.
+  const plays = new Map();
+  for (const e of state.history || []) {
+    if (!e || !e.artist) continue;
+    if (e.source === "horn" || e.source === "midnight") continue;
+    if ((e.ms || 0) < HISTORY_MIN_MS) continue;
+    const name = String(e.artist).split(",")[0].trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    const a = plays.get(key) || { artist: name, plays: 0 };
+    a.plays++;
+    plays.set(key, a);
+  }
+  const topArtist = [...plays.values()]
+    .sort((a, b) => b.plays - a.plays || a.artist.localeCompare(b.artist))[0] || null;
+
+  res.json({
+    wishes: state.wishCount || 0,
+    guests: byGuest.size,
+    waiting,
+    king: king ? { name: king.name, count: king.count } : null,
+    hearted: hearted
+      ? {
+          title: hearted.title,
+          artist: hearted.artist,
+          by: hearted.addedBy,
+          votes: hearted.voterIds.length,
+          hearts: 1 + hearted.voterIds.length,
+        }
+      : null,
+    topArtist,
+  });
+});
+
 // Gast waehlt (oder loescht) seine Musikrichtung. Eine pro Gast, jederzeit aenderbar.
 app.post("/api/direction", (req, res) => {
   const { guestId, mood } = req.body || {};
