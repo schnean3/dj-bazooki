@@ -431,33 +431,81 @@ function placeVote(active) {
   panel.classList.toggle("vote-big", !!active);
 }
 
+// Merkt sich, was gerade im Panel steht (`voteView`) und den zuletzt bekannten
+// Zwischenstand (`voteCache`). Beides gegen das Blinken: frueher wurde das Panel
+// geleert und erst NACH der Antwort von /api/vote/live wieder gefuellt — bei jedem
+// Refresh war das Ranking fuer die Dauer der Anfrage weg. Jetzt wird zuerst geholt,
+// dann getauscht; und solange dieselbe Runde laeuft, bleiben die Knoten stehen und
+// nur Breite/Zahl/Text werden nachgezogen (dadurch laeuft auch die CSS-Transition
+// der Balken, statt bei jedem Neuaufbau von vorn zu springen).
+let voteView = null;   // { id, closed, names, rows:[{fill,count}], timer }
+let voteCache = null;  // { id, counts } — Fallback, wenn /api/vote/live mal nicht antwortet
+
+const voteBarWidth = (c, max) => `${Math.max(3, (c / max) * 100)}%`;
+
 async function renderVote(data) {
   const host = document.getElementById("vote-panel");
   const v = data.vote;
   placeVote(!!v);
-  if (!v) { host.style.display = "none"; return; }
-  host.style.display = "";
-  host.innerHTML = "";
-  if (v.closed) {
-    host.append(
-      el("div", { class: "vote-label" }, "Voting"),
-      el("div", { class: "vote-winner" }, v.winnerName ? v.winnerName : "—"),
-      el("div", { class: "vote-timer" }, v.winnerName ? "hat gewonnen 🎉" : "niemand hat abgestimmt"));
+  if (!v) {
+    host.style.display = "none";
+    if (voteView) { host.replaceChildren(); voteView = null; voteCache = null; }
     return;
   }
-  const { data: live } = await api("/api/vote/live");
-  const counts = live?.counts || v.names.map(() => 0);
+  host.style.display = "";
+
+  if (v.closed) {
+    if (!(voteView && voteView.id === v.id && voteView.closed)) {
+      host.replaceChildren(
+        el("div", { class: "vote-label" }, "Voting"),
+        el("div", { class: "vote-winner" }, v.winnerName ? v.winnerName : "—"),
+        el("div", { class: "vote-timer" }, v.winnerName ? "hat gewonnen 🎉" : "niemand hat abgestimmt"));
+      voteView = { id: v.id, closed: true };
+    }
+    return;
+  }
+
+  // Zwischenstand holen, bevor am DOM irgendetwas passiert.
+  const live = await api("/api/vote/live").then((r) => r.data).catch(() => null);
+  let counts = Array.isArray(live?.counts) && live.counts.length === v.names.length ? live.counts : null;
+  if (!counts) counts = voteCache && voteCache.id === v.id ? voteCache.counts : v.names.map(() => 0);
+  voteCache = { id: v.id, counts };
+
   const total = counts.reduce((a, b) => a + b, 0);
   const max = Math.max(1, ...counts);
   const closesTxt = v.closesAt != null ? "schliesst in " + fmtClock(v.closesAt - Date.now()) : "schliesst nach diesem Song";
-  host.append(
-    el("div", { class: "vote-label" }, "Voting läuft 📲"),
-    el("div", { class: "vote-bars" }, v.names.map((n, i) =>
-      el("div", { class: "vote-bar-row" },
+  const timerTxt = closesTxt + (total ? ` · ${total} Stimme${total === 1 ? "" : "n"}` : " · noch keine Stimme");
+
+  const same = voteView && !voteView.closed && voteView.id === v.id
+    && voteView.names.length === v.names.length
+    && voteView.names.every((n, i) => n === v.names[i]);
+
+  if (!same) {
+    const rows = [];
+    const bars = el("div", { class: "vote-bars" });
+    v.names.forEach((n, i) => {
+      const fill = el("div", { class: "bar-fill", style: `width:${voteBarWidth(counts[i], max)};background:var(--gold)` });
+      const count = el("div", { class: "vote-bar-count" }, String(counts[i]));
+      bars.append(el("div", { class: "vote-bar-row" },
         el("div", { class: "vote-bar-name truncate" }, n),
-        el("div", { class: "bar-track" }, el("div", { class: "bar-fill", style: `width:${Math.max(3, (counts[i] / max) * 100)}%;background:var(--gold)` })),
-        el("div", { class: "vote-bar-count" }, counts[i])))),
-    el("div", { class: "vote-timer" }, closesTxt + (total ? ` · ${total} Stimme${total === 1 ? "" : "n"}` : " · noch keine Stimme")));
+        el("div", { class: "bar-track" }, fill),
+        count));
+      rows.push({ fill, count });
+    });
+    const timer = el("div", { class: "vote-timer" }, timerTxt);
+    host.replaceChildren(el("div", { class: "vote-label" }, "Voting läuft 📲"), bars, timer);
+    voteView = { id: v.id, closed: false, names: v.names.slice(), rows, timer };
+    return;
+  }
+
+  // Gleiche Runde: nur die Werte nachziehen, nichts neu bauen.
+  voteView.rows.forEach((row, i) => {
+    const w = voteBarWidth(counts[i], max);
+    if (row.fill.style.width !== w) row.fill.style.width = w;
+    const c = String(counts[i]);
+    if (row.count.textContent !== c) row.count.textContent = c;
+  });
+  if (voteView.timer.textContent !== timerTxt) voteView.timer.textContent = timerTxt;
 }
 
 /* ---- Statistik-Feld ----
@@ -608,7 +656,16 @@ function renderVibeBars(vibe, dom) {
   }
 }
 
+// Laeuft alle 3.5s. Der Riegel verhindert, dass sich bei einer langsamen Antwort
+// zwei Durchgaenge ueberholen und ein alter Stand den neuen ueberschreibt.
+let refreshing = false;
 async function refresh() {
+  if (refreshing) return;
+  refreshing = true;
+  try { await refreshOnce(); } finally { refreshing = false; }
+}
+
+async function refreshOnce() {
   const { data } = await api("/api/state");
   renderHero(data.nowPlaying, data.playback, data.requests);
   renderMoment(data.nowPlaying, data.playback, data.requests);
