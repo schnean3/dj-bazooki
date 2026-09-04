@@ -72,8 +72,25 @@
   .qrcard .txt{ font-family:var(--display); font-size:15px; line-height:1.3; color:var(--ink); }
   .qrcard .txt b{ color:var(--gold); display:block; font-size:16px; }
 
-  .grid2{ display:grid; grid-template-columns:1.55fr 1fr; gap:22px; align-items:start; }
-  @media (max-width:980px){ .grid2{ grid-template-columns:1fr; } .stage{ padding:18px 16px 24px; } .topbar{ flex-direction:column; align-items:flex-start; } }
+  .grid2{ display:grid; grid-template-columns:minmax(0,1.55fr) minmax(0,1fr); gap:22px; align-items:start; }
+  @media (max-width:980px){ .grid2{ grid-template-columns:minmax(0,1fr); } .stage{ padding:18px 16px 24px; } .topbar{ flex-direction:column; align-items:flex-start; } }
+
+  /* Laptop-Groessen: enger setzen, damit ohne Scrollen alles aufs Bild passt. */
+  @media (max-width:1440px){
+    .stage{ padding:16px 24px 22px; }
+    .hero-now{ padding:20px; }
+    .hero-art{ width:clamp(120px,14vw,168px); height:clamp(120px,14vw,168px); }
+    .hero-now .flex{ gap:20px; }
+    .panel{ padding:14px 15px 12px; margin-bottom:14px; }
+    .current-dir{ padding:18px 18px; }
+    .stage .current-dir-name{ font-size:clamp(24px,3.4vw,40px); }
+    .topbar{ margin-bottom:14px; }
+  }
+  @media (max-height:860px){
+    .up-row{ padding:7px 2px; }
+    .stage #switch{ margin-top:10px; }
+    .current-dir{ margin-top:14px; }
+  }
 
   /* ---- Now playing hero ---- */
   .hero-now{ background:#FFFFFF0A; border:1px solid var(--border); border-radius:24px; padding:26px;
@@ -82,13 +99,12 @@
   .hero-art{ width:clamp(140px,17vw,220px); height:clamp(140px,17vw,220px); border-radius:18px; flex-shrink:0;
     display:grid; place-items:center; font-size:64px; background:var(--surface2); box-shadow:0 0 70px -16px var(--accentGlow); }
   .hero-art.has-image{ background-size:cover; background-position:center; }
-  .hero-title{ font-family:var(--body); font-weight:700; font-size:clamp(28px,3.3vw,50px); line-height:1.08;
-    letter-spacing:-.5px; margin-bottom:5px; overflow-wrap:break-word; text-shadow:0 0 40px #FFFFFF2E; }
+  .hero-title{ font-family:var(--body); font-weight:700; font-size:clamp(26px,3.1vw,46px); line-height:1.08;
+    letter-spacing:-.5px; margin-bottom:5px; overflow-wrap:anywhere; text-shadow:0 0 40px #FFFFFF2E;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .hero-artist{ color:var(--dim); font-size:clamp(15px,1.5vw,20px); margin-bottom:10px; }
   .hero-by{ color:var(--gold); font-family:var(--display); font-size:clamp(14px,1.3vw,18px); font-weight:600; }
   .hero-hearts{ font-family:var(--display); font-size:clamp(15px,1.4vw,19px); color:var(--rose); margin-left:10px; white-space:nowrap; }
-  .hero-progress{ margin-top:18px; }
-  .hero-progress .track{ height:10px; }
   .idle-hero{ text-align:center; padding:50px 10px 40px; }
   .idle-hero .big{ font-family:var(--script); color:var(--gold); font-size:clamp(34px,5vw,56px); margin-bottom:6px; }
   .idle-hero .sub{ color:var(--dim); font-size:15px; }
@@ -247,20 +263,6 @@ function tickClock() {
     new Date().toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
 }
 
-// Lokale Fortschritts-Interpolation zwischen den 3.5s-Polls, damit der Balken
-// auf dem grossen Screen nicht ruckelt.
-let lastPlayback = null;
-function renderProgress() {
-  const host = document.getElementById("prog");
-  if (!host || !lastPlayback || !lastPlayback.duration) return;
-  const elapsed = lastPlayback.is_playing
-    ? Math.min(lastPlayback.duration, lastPlayback.progress + (Date.now() - lastPlayback.ts))
-    : lastPlayback.progress;
-  const pct = Math.min(100, (elapsed / lastPlayback.duration) * 100);
-  const fill = host.querySelector(".bar-fill");
-  if (fill) fill.style.width = pct + "%";
-}
-
 // Das laufende Albumcover liegt unscharf hinter allem. Zwei Ebenen, damit der
 // Songwechsel ueberblendet statt springt.
 let bgSlot = 0, bgUrl = null;
@@ -310,7 +312,6 @@ function renderHero(np, playback, requests) {
     host.append(el("div", { class: "idle-hero" },
       el("div", { class: "big" }, "Bald geht's los ✨"),
       el("div", { class: "sub" }, "Wünsche gleich hier scannen und mitgestalten.")));
-    lastPlayback = null;
     return;
   }
   setBgArt(np.image || null);
@@ -324,21 +325,13 @@ function renderHero(np, playback, requests) {
 
   host.innerHTML = "";
   const info = el("div", { style: "min-width:0;flex:1" },
-    el("div", { class: "hero-title truncate" }, np.title),
+    el("div", { class: "hero-title" }, np.title),
     el("div", { class: "hero-artist truncate" }, np.artist),
     el("div", { style: "display:flex;align-items:center;flex-wrap:wrap" },
       by ? el("span", { class: "hero-by" }, isAuto ? "🎧 DJ BazooKI Auswahl" : `♥ gewünscht von ${by}`) : null,
       hearts ? el("span", { class: "hero-hearts" }, "♥ " + hearts) : null));
   host.append(el("div", { class: "flex" }, art, info));
 
-  if (playback && playback.duration > 0) {
-    const prog = el("div", { id: "prog", class: "hero-progress" },
-      el("div", { class: "bar-track track" }, el("div", { class: "bar-fill", style: "background:var(--gold);width:0%" })));
-    host.append(prog);
-    lastPlayback = { ...playback };
-  } else {
-    lastPlayback = null;
-  }
 }
 
 // curMood = die Richtung, die gerade laeuft. Wuensche aus einer anderen Richtung
@@ -422,7 +415,6 @@ tickClock();
 setInterval(tickClock, 15000);
 refresh();
 setInterval(refresh, 3500);
-setInterval(renderProgress, 250);
 </script>
 </body>
 </html>
