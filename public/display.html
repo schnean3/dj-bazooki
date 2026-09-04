@@ -10,6 +10,51 @@
   /* Grossbildschirm-Ansicht: eigenes Layout, nutzt aber die Farben/Fonts/Komponenten
      aus app.css (current-dir, vibe, bar-*, eq, switch-hint, row/now, badge ...) unveraendert -
      hier nur Groessen & Anordnung fuer einen Laptop-/TV-Screen im Querformat. */
+  /* ---- Neon Floor: nur diese Seite ----
+     Ueberschreibt die Palette aus app.css. guest.html und dj.html bleiben hell.
+     --accent wird zur Laufzeit auf die Farbe der laufenden Richtung gesetzt (siehe Script). */
+  :root{
+    --bg:#07060A; --bg2:#040308;
+    --surface:#12121A;
+    --surface2:#1A1A26;
+    --border:#FFFFFF1F;
+    --gold:#FFD24A;
+    --goldSoft:#FFE28C;
+    --rose:#FF6FA5;
+    --ink:#EDEFF7;
+    --ivory:#EDEFF7;
+    --dim:#969CB2;
+    --accent:#FFD24A;
+    --accentGlow:#FFD24A38;
+  }
+  html{ color-scheme:dark; }
+  body{ background:var(--bg2); position:relative; }
+
+  /* Farbschleier in der Farbe der laufenden Richtung - dreht beim Richtungswechsel mit. */
+  body::before{
+    content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
+    background:
+      radial-gradient(80% 60% at 10% -5%, var(--accentGlow) 0%, transparent 60%),
+      radial-gradient(70% 60% at 95% 105%, var(--accentGlow) 0%, transparent 65%),
+      radial-gradient(120% 90% at 50% 40%, var(--bg) 0%, var(--bg2) 75%);
+    animation:breathe 14s ease-in-out infinite;
+  }
+  @keyframes breathe{ 0%,100%{ opacity:.75; } 50%{ opacity:1; } }
+
+  /* app.css hat hier helle Werte fest verdrahtet - fuer die dunkle Ansicht nachgezogen. */
+  .bar-track{ background:#FFFFFF14; }
+  .bar-fill{ box-shadow:0 0 14px -2px #FFFFFF40; }
+  .current-dir, .vibe{
+    background:#FFFFFF08; border-color:var(--border);
+    box-shadow:0 0 50px -30px var(--accent);
+  }
+  .current-dir-name span:last-child{ text-shadow:0 0 30px currentColor; }
+  .vibe .dom span:last-child{ text-shadow:0 0 22px currentColor; }
+  .switch-hint{ background:#FFFFFF0A; box-shadow:none; }
+  .empty{ background:#FFFFFF08; }
+  .badge{ color:#0B0A10; }
+  .eq i{ box-shadow:0 0 10px currentColor; }
+
   html, body{ height:100%; }
   body{ overflow-x:hidden; }
   .stage{ max-width:1560px; margin:0 auto; padding:22px 34px 30px; min-height:100vh; }
@@ -21,7 +66,7 @@
   .topbar .toolname{ margin:0; }
   .clock{ font-family:var(--display); font-size:20px; color:var(--dim); letter-spacing:1px; white-space:nowrap; }
 
-  .qrcard{ display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:9px 16px 9px 9px; box-shadow:0 6px 20px -16px #6b5a34; flex-shrink:0; }
+  .qrcard{ display:flex; align-items:center; gap:12px; background:#FFFFFF0A; border:1px solid var(--border); border-radius:16px; padding:9px 16px 9px 9px; box-shadow:0 0 30px -20px var(--accent); flex-shrink:0; }
   .qrcard .qrbox{ width:72px; height:72px; background:#fff; border-radius:8px; padding:4px; flex-shrink:0; }
   .qrcard .qrbox svg{ display:block; width:100%; height:100%; }
   .qrcard .txt{ font-family:var(--display); font-size:15px; line-height:1.3; color:var(--ink); }
@@ -31,19 +76,19 @@
   @media (max-width:980px){ .grid2{ grid-template-columns:1fr; } .stage{ padding:18px 16px 24px; } .topbar{ flex-direction:column; align-items:flex-start; } }
 
   /* ---- Now playing hero ---- */
-  .hero-now{ background:linear-gradient(160% 150% at 12% 0%, #FBF8F1 0%, var(--surface) 55%, var(--surface2) 100%);
-    border:1px solid var(--border); border-radius:24px; padding:26px; box-shadow:0 10px 34px -22px #6b5a34; }
+  .hero-now{ background:#FFFFFF0A; border:1px solid var(--border); border-radius:24px; padding:26px;
+    box-shadow:0 0 60px -34px var(--accent); }
   .hero-now .flex{ display:flex; gap:26px; align-items:center; }
   .hero-art{ width:clamp(140px,17vw,220px); height:clamp(140px,17vw,220px); border-radius:18px; flex-shrink:0;
-    display:grid; place-items:center; font-size:64px; background:var(--surface2); box-shadow:0 8px 26px -16px #6b5a34; }
+    display:grid; place-items:center; font-size:64px; background:var(--surface2); box-shadow:0 0 70px -16px var(--accentGlow); }
   .hero-art.has-image{ background-size:cover; background-position:center; }
-  .hero-title{ font-family:var(--display); font-weight:600; font-size:clamp(26px,3vw,44px); line-height:1.12; margin-bottom:4px; overflow-wrap:break-word; }
+  .hero-title{ font-family:var(--body); font-weight:700; font-size:clamp(28px,3.3vw,50px); line-height:1.08;
+    letter-spacing:-.5px; margin-bottom:5px; overflow-wrap:break-word; text-shadow:0 0 40px #FFFFFF2E; }
   .hero-artist{ color:var(--dim); font-size:clamp(15px,1.5vw,20px); margin-bottom:10px; }
   .hero-by{ color:var(--gold); font-family:var(--display); font-size:clamp(14px,1.3vw,18px); font-weight:600; }
   .hero-hearts{ font-family:var(--display); font-size:clamp(15px,1.4vw,19px); color:var(--rose); margin-left:10px; white-space:nowrap; }
   .hero-progress{ margin-top:18px; }
   .hero-progress .track{ height:10px; }
-  .hero-times{ display:flex; justify-content:space-between; font-size:12.5px; color:var(--dim); margin-top:6px; font-variant-numeric:tabular-nums; }
   .idle-hero{ text-align:center; padding:50px 10px 40px; }
   .idle-hero .big{ font-family:var(--script); color:var(--gold); font-size:clamp(34px,5vw,56px); margin-bottom:6px; }
   .idle-hero .sub{ color:var(--dim); font-size:15px; }
@@ -54,7 +99,7 @@
   .stage .switch-hint .st-main{ font-size:16px; }
 
   /* ---- Right column ---- */
-  .panel{ background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:18px 18px 16px; box-shadow:0 6px 22px -18px #6b5a34; margin-bottom:18px; }
+  .panel{ background:#FFFFFF08; border:1px solid var(--border); border-radius:18px; padding:18px 18px 16px; box-shadow:none; margin-bottom:18px; }
   .panel .head{ margin-bottom:12px; }
   .panel .section-head{ font-size:19px; margin:0; }
 
@@ -67,7 +112,7 @@
   .up-by{ color:var(--gold); font-size:11.5px; font-weight:600; }
   .up-hearts{ font-size:12.5px; color:var(--rose); flex-shrink:0; white-space:nowrap; }
 
-  .chip-row{ display:flex; align-items:center; gap:10px; background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:11px 14px; font-size:14px; }
+  .chip-row{ display:flex; align-items:center; gap:10px; background:#FFFFFF0A; border:1px solid var(--border); border-radius:12px; padding:11px 14px; font-size:14px; }
   .chip-row b{ color:var(--gold); }
 
   .vote-box{ text-align:center; }
@@ -83,16 +128,44 @@
   .mini-vibe .vibe{ border:none; box-shadow:none; padding:0; background:none; }
   .mini-vibe .bar-label{ width:auto; flex:1; font-size:12px; }
   .mini-vibe .bar-track{ flex:1.4; height:7px; }
-  .mini-vibe .dom{ font-size:16px; margin:2px 0 10px; }
+  /* Die Richtung steht schon gross in der "Laeuft gerade"-Karte - hier nur noch die Balken. */
+  .mini-vibe .dom{ display:none; }
+
+  /* Albumcover als Raumhintergrund: zwei Ebenen, die beim Songwechsel ueberblenden. */
+  .bgart{ position:fixed; inset:-10%; z-index:-1; background-size:cover; background-position:center;
+    filter:blur(80px) saturate(1.6) brightness(.6); opacity:0; transition:opacity 1s ease; pointer-events:none; }
+  .bgart.on{ opacity:.40; }
+
+  /* Moment-Band: nur bei Voting-Sieg oder Meilenstein, nur am Songanfang. */
+  .moment{ display:flex; align-items:center; gap:16px; margin-bottom:16px; padding:14px 22px;
+    border:1px solid var(--accent); border-radius:16px; background:#FFFFFF12;
+    box-shadow:0 0 60px -24px var(--accent); animation:momentIn .5s ease; }
+  .moment .m-emoji{ font-size:34px; line-height:1; flex-shrink:0; }
+  .moment .m-lbl{ font-family:var(--display); text-transform:uppercase; letter-spacing:2.5px;
+    font-size:12px; font-weight:600; color:var(--dim); }
+  .moment .m-main{ font-family:var(--display); font-weight:600; font-size:clamp(22px,2.2vw,32px);
+    color:var(--ink); line-height:1.15; }
+  @keyframes momentIn{ from{ opacity:0; transform:translateY(-10px); } to{ opacity:1; transform:none; } }
+
+  /* Waehrend eines Votings wandert das Panel in die linke Spalte und wird gross. */
+  #vote-slot-left .panel{ margin-top:18px; margin-bottom:0; }
+  .vote-big .vote-label{ font-size:15px; margin-bottom:16px; }
+  .vote-big .vote-bar-row{ margin-bottom:14px; }
+  .vote-big .vote-bar-name{ font-size:24px; max-width:38%; }
+  .vote-big .bar-track{ height:22px; }
+  .vote-big .vote-bar-count{ width:30px; font-size:18px; }
+  .vote-big .vote-timer{ font-size:16px; margin-top:10px; }
+  .vote-big .vote-winner{ font-size:clamp(44px,5.5vw,68px); }
 </style>
 </head>
 <body>
+  <div id="bgart-a" class="bgart"></div>
+  <div id="bgart-b" class="bgart"></div>
   <div class="stage">
     <div class="topbar">
       <div class="crest">
         <div class="monogram">C&nbsp;+&nbsp;D</div>
         <div class="couple">Caroline &amp; Daniel</div>
-        <div class="date">5. September 2026</div>
         <div class="toolname">Musik mit <b>DJ BazooKI</b></div>
       </div>
       <div style="display:flex;align-items:center;gap:16px">
@@ -106,9 +179,11 @@
 
     <div class="grid2">
       <div>
+        <div id="moment"></div>
         <div id="now-hero" class="hero-now"></div>
         <div id="current-dir" class="current-dir"></div>
         <div id="switch"></div>
+        <div id="vote-slot-left"></div>
       </div>
 
       <div>
@@ -118,12 +193,11 @@
           <div id="upnext"></div>
         </div>
 
-        <div id="vote-panel" class="panel vote-box" style="display:none"></div>
-
-        <div id="next-vote-chip" class="chip-row" style="display:none;margin-bottom:18px"></div>
+        <div id="vote-slot-right">
+          <div id="vote-panel" class="panel vote-box" style="display:none"></div>
+        </div>
 
         <div class="panel">
-          <div class="head"><div class="section-head" style="font-size:15px;color:var(--dim);font-family:var(--body);font-weight:600;text-transform:uppercase;letter-spacing:1px">Richtungswahl der Gäste</div></div>
           <div class="mini-vibe"><div id="vibe"></div></div>
         </div>
       </div>
@@ -132,6 +206,25 @@
 
 <script type="module">
 import { MOODS, api, el, renderCurrentDirection, renderVibe, renderSwitchHint, fmtClock, queueSort } from "/shared.js";
+
+// Richtungsfarben in Neon - nur fuer diese Seite, guest.html und dj.html bleiben unberuehrt.
+const NEON_COLORS = {
+  "Party-Charts":             "#FFD24A",
+  "Latino":                   "#FF7A3D",
+  "RnB, Hip-Hop & Reggaeton": "#B36CFF",
+  "Punk, Rock & UK Grunge":   "#FF4D6D",
+  "Mundart & Schlager":       "#4ADE80",
+};
+for (const [name, color] of Object.entries(NEON_COLORS)) if (MOODS[name]) MOODS[name].color = color;
+
+// Faerbt den Hintergrundschleier in der Farbe der laufenden Richtung. Ohne
+// committete Richtung bleibt es beim Gold der Party-Charts.
+function applyAmbient(mood) {
+  const c = (mood && MOODS[mood]?.color) || "#FFD24A";
+  const root = document.documentElement.style;
+  root.setProperty("--accent", c);
+  root.setProperty("--accentGlow", c + "38");
+}
 
 const GUEST_URL = location.origin + "/guest.html";
 
@@ -166,17 +259,53 @@ function renderProgress() {
   const pct = Math.min(100, (elapsed / lastPlayback.duration) * 100);
   const fill = host.querySelector(".bar-fill");
   if (fill) fill.style.width = pct + "%";
-  const times = host.querySelector(".hero-times");
-  if (times) {
-    const mmss = (ms) => Math.floor(ms / 60000) + ":" + String(Math.floor((ms / 1000) % 60)).padStart(2, "0");
-    times.children[0].textContent = mmss(elapsed);
-    times.children[1].textContent = "-" + mmss(Math.max(0, lastPlayback.duration - elapsed));
+}
+
+// Das laufende Albumcover liegt unscharf hinter allem. Zwei Ebenen, damit der
+// Songwechsel ueberblendet statt springt.
+let bgSlot = 0, bgUrl = null;
+function setBgArt(url) {
+  if (url === bgUrl) return;
+  bgUrl = url || null;
+  const a = document.getElementById("bgart-a"), b = document.getElementById("bgart-b");
+  if (!bgUrl) { a.classList.remove("on"); b.classList.remove("on"); return; }
+  const next = bgSlot ? b : a, cur = bgSlot ? a : b;
+  next.style.backgroundImage = `url('${bgUrl}')`;
+  next.classList.add("on");
+  cur.classList.remove("on");
+  bgSlot = 1 - bgSlot;
+}
+
+// Band ueber dem Hero - nur fuer Voting-Gewinner und Meilenstein-Wuensche, und nur
+// in den ersten 30 Sekunden des Songs. Sonst steht es den ganzen Song lang da.
+let momentKey = null;
+function renderMoment(np, playback, requests) {
+  const host = document.getElementById("moment");
+  const r = np ? requests.find((x) => x.id === np.id) : null;
+  const fresh = playback && playback.duration > 0 && playback.progress < 30000;
+  let key = null, emoji = null, lbl = null, main = null;
+  if (r && fresh && r.voteWin) {
+    key = r.id + ":vote"; emoji = "🏆"; lbl = "Voting gewonnen";
+    main = r.addedBy ? `${r.addedBy}s Lieblingslied` : "Das Lieblingslied des Gewinners";
+  } else if (r && fresh && r.milestone) {
+    key = r.id + ":milestone"; emoji = "🎉"; lbl = "Meilenstein";
+    main = `Der ${r.milestone}. Wunsch des Abends` + (r.addedBy ? ` — von ${r.addedBy}` : "");
   }
+  if (key === momentKey) return;
+  momentKey = key;
+  host.innerHTML = "";
+  if (!key) return;
+  host.append(el("div", { class: "moment" },
+    el("div", { class: "m-emoji" }, emoji),
+    el("div", { style: "min-width:0" },
+      el("div", { class: "m-lbl" }, lbl),
+      el("div", { class: "m-main truncate" }, main))));
 }
 
 function renderHero(np, playback, requests) {
   const host = document.getElementById("now-hero");
   if (!np) {
+    setBgArt(null);
     host.innerHTML = "";
     host.append(el("div", { class: "idle-hero" },
       el("div", { class: "big" }, "Bald geht's los ✨"),
@@ -184,6 +313,7 @@ function renderHero(np, playback, requests) {
     lastPlayback = null;
     return;
   }
+  setBgArt(np.image || null);
   const req = requests.find((r) => r.id === np.id);
   const hearts = req ? (req.weight ?? (1 + (req.voterIds?.length || 0))) : null;
   const by = req?.addedBy;
@@ -203,8 +333,7 @@ function renderHero(np, playback, requests) {
 
   if (playback && playback.duration > 0) {
     const prog = el("div", { id: "prog", class: "hero-progress" },
-      el("div", { class: "bar-track track" }, el("div", { class: "bar-fill", style: "background:var(--gold);width:0%" })),
-      el("div", { class: "hero-times" }, el("span", {}, "0:00"), el("span", {}, "0:00")));
+      el("div", { class: "bar-track track" }, el("div", { class: "bar-fill", style: "background:var(--gold);width:0%" })));
     host.append(prog);
     lastPlayback = { ...playback };
   } else {
@@ -236,21 +365,21 @@ function renderUpNext(requests, nowId, curMood) {
   });
 }
 
-// Zeigt den Countdown bis zum naechsten Voting - nur sichtbar, wenn gerade
-// KEIN Voting laeuft (waehrend eines Votings uebernimmt das vote-panel diese Stelle).
-function renderNextVote(data) {
-  const host = document.getElementById("next-vote-chip");
-  if (data.vote || !data.voteEnabled || data.voteInMs == null) { host.style.display = "none"; return; }
-  host.style.display = "";
-  host.innerHTML = "";
-  host.append(el("span", { style: "font-size:20px" }, "🗳️"), el("span", {}, "Nächstes Voting ", el("b", {}, fmtClock(data.voteInMs))));
-}
-
 // Waehrend eines laufenden Votings holt NUR diese Seite (nicht guest.html/dj.html)
 // den Zwischenstand via /api/vote/live und zeigt ihn live als Balken.
+// Waehrend abgestimmt wird, ist das Voting das Wichtigste im Raum: das Panel wandert
+// aus der rechten Spalte nach links unter den Hero und wird gross.
+function placeVote(active) {
+  const panel = document.getElementById("vote-panel");
+  const slot = document.getElementById(active ? "vote-slot-left" : "vote-slot-right");
+  if (panel.parentElement !== slot) slot.append(panel);
+  panel.classList.toggle("vote-big", !!active);
+}
+
 async function renderVote(data) {
   const host = document.getElementById("vote-panel");
   const v = data.vote;
+  placeVote(!!v);
   if (!v) { host.style.display = "none"; return; }
   host.style.display = "";
   host.innerHTML = "";
@@ -279,12 +408,13 @@ async function renderVote(data) {
 async function refresh() {
   const { data } = await api("/api/state");
   renderHero(data.nowPlaying, data.playback, data.requests);
+  renderMoment(data.nowPlaying, data.playback, data.requests);
   renderUpNext(data.requests, data.nowPlaying?.id, data.committedDirection?.mood || null);
-  renderNextVote(data);
   await renderVote(data);
+  applyAmbient(data.committedDirection?.mood || null);
   renderCurrentDirection(document.getElementById("current-dir"), data.committedDirection);
   renderSwitchHint(document.getElementById("switch"), data.directionSwitch, data.vibe, "dj");
-  renderVibe(document.getElementById("vibe"), data.vibe, false);
+  renderVibe(document.getElementById("vibe"), data.vibe, false, "Richtungswahl der Gäste");
 }
 
 drawQr();
