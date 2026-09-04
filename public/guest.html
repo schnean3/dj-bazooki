@@ -426,7 +426,9 @@
 
       let when;
       if (ds.phase) when = "Entschieden wird gerade jetzt";
-      else if (ds.midnightHold) when = "kurz Pause, das Mitternachtslied hat Vorrang";
+      // Bewusst neutral: rund um Mitternacht pausiert der Takt, aber warum,
+      // bleibt eine Ueberraschung (gleiche Formulierung wie auf dem Beamer).
+      else if (ds.midnightHold) when = "der Takt macht kurz Pause";
       else if (ds.dwellRemainingMs > 0) when = "entschieden wird in " + fmtClock(ds.dwellRemainingMs);
       else when = "die Entscheidung steht gleich an";
 
