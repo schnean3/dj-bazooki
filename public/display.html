@@ -163,6 +163,19 @@
     color:var(--ink); line-height:1.15; }
   @keyframes momentIn{ from{ opacity:0; transform:translateY(-10px); } to{ opacity:1; transform:none; } }
 
+  /* ---- Statistik-Feld: eine Kachel, die alle paar Sekunden wechselt. ---- */
+  .stat-panel{ margin-bottom:0; }
+  .stat{ display:flex; align-items:center; gap:14px; min-height:56px;
+    transition:opacity .35s ease, transform .35s ease; }
+  .stat.out{ opacity:0; transform:translateY(6px); }
+  .stat .s-emoji{ font-size:30px; line-height:1; flex-shrink:0; }
+  .stat .s-val{ font-family:var(--display); font-weight:600; font-size:clamp(20px,2.1vw,30px);
+    line-height:1.1; color:var(--gold); text-shadow:0 0 32px var(--accentGlow); }
+  .stat .s-lbl{ color:var(--dim); font-size:12.5px; margin-top:3px; }
+  .stat-dots{ display:flex; gap:5px; justify-content:center; margin-top:10px; }
+  .stat-dots i{ width:5px; height:5px; border-radius:50%; background:#FFFFFF26; }
+  .stat-dots i.on{ background:var(--gold); }
+
   /* Waehrend eines Votings wandert das Panel in die linke Spalte und wird gross. */
   #vote-slot-left .panel{ margin-top:18px; margin-bottom:0; }
   .vote-big .vote-label{ font-size:15px; margin-bottom:16px; }
@@ -215,6 +228,12 @@
 
         <div class="panel">
           <div class="mini-vibe"><div id="vibe"></div></div>
+        </div>
+
+        <!-- Bleibt versteckt, solange keine Kachel genug Daten hat (Abendanfang). -->
+        <div class="panel stat-panel" id="stat-panel" style="display:none">
+          <div id="stat" class="stat"></div>
+          <div id="stat-dots" class="stat-dots"></div>
         </div>
       </div>
     </div>
@@ -398,6 +417,78 @@ async function renderVote(data) {
     el("div", { class: "vote-timer" }, closesTxt + (total ? ` · ${total} Stimme${total === 1 ? "" : "n"}` : " · noch keine Stimme")));
 }
 
+/* ---- Statistik-Feld ----
+   Kacheln laufen reihum. `ready` entscheidet, ob eine Kachel ueberhaupt genug Daten
+   hat: am Anfang des Abends ist das keine einzige, dann bleibt das Feld ausgeblendet
+   statt "1 Song gespielt" an die Wand zu werfen. Die Zahlen kommen aus /api/stats;
+   Horn und Mitternachtslied sind dort schon rausgefiltert. */
+const STAT_TILES = [
+  { key: "wishes", emoji: "💫",
+    ready: (s) => s.wishes > 0,
+    val:   (s) => String(s.wishes),
+    lbl:   (s) => s.wishes === 1 ? "Liederwunsch heute Abend" : "Liederwünsche heute Abend" },
+  { key: "king", emoji: "👑",
+    ready: (s) => s.king && s.king.count >= 2,
+    val:   (s) => s.king.name,
+    lbl:   (s) => `Wunsch-König:in — ${s.king.count} Wünsche` },
+  { key: "hearted", emoji: "❤️",
+    ready: (s) => s.hearted && s.hearted.votes >= 1,
+    val:   (s) => s.hearted.title,
+    lbl:   (s) => `${s.hearted.artist} · ♥ ${s.hearted.hearts} — die meisten Herzen` },
+  { key: "waiting", emoji: "⏳",
+    ready: (s) => s.waiting >= 1,
+    val:   (s) => String(s.waiting),
+    lbl:   (s) => s.waiting === 1 ? "Wunsch wartet auf seine Richtung" : "Wünsche warten auf ihre Richtung" },
+  { key: "artist", emoji: "🎤",
+    ready: (s) => s.topArtist && s.topArtist.plays >= 2,
+    val:   (s) => s.topArtist.artist,
+    lbl:   (s) => `meistgespielt — ${s.topArtist.plays} Songs` },
+  { key: "guests", emoji: "🙋",
+    ready: (s) => s.guests >= 1,
+    val:   (s) => String(s.guests),
+    lbl:   (s) => s.guests === 1 ? "Gast hat schon gewünscht" : "Gäste haben schon gewünscht" },
+];
+const STAT_ROTATE_MS = 12000;
+let statData = null, statIdx = 0, statShown = null;
+
+async function loadStats() {
+  const { ok, data } = await api("/api/stats");
+  if (ok && data) statData = data;
+  renderStat(false);
+}
+
+function renderStat(advance) {
+  const panel = document.getElementById("stat-panel");
+  const host = document.getElementById("stat");
+  const dots = document.getElementById("stat-dots");
+  const tiles = statData ? STAT_TILES.filter((t) => t.ready(statData)) : [];
+  if (!tiles.length) { panel.style.display = "none"; statShown = null; return; }
+  panel.style.display = "";
+  if (advance) statIdx++;
+  const i = statIdx % tiles.length;
+  const t = tiles[i];
+  const val = t.val(statData), lbl = t.lbl(statData);
+
+  dots.innerHTML = "";
+  tiles.forEach((_, k) => dots.append(el("i", { class: k === i ? "on" : "" })));
+
+  // Gleicher Inhalt wie eben -> nicht neu zeichnen. Sonst flackerte die Kachel bei
+  // jedem Daten-Refresh, auch wenn sich gar nichts geaendert hat.
+  const sig = t.key + "|" + val + "|" + lbl;
+  if (sig === statShown) return;
+  statShown = sig;
+  host.classList.add("out");
+  setTimeout(() => {
+    host.innerHTML = "";
+    host.append(
+      el("div", { class: "s-emoji" }, t.emoji),
+      el("div", { style: "min-width:0;flex:1" },
+        el("div", { class: "s-val truncate" }, val),
+        el("div", { class: "s-lbl truncate" }, lbl)));
+    host.classList.remove("out");
+  }, 350);
+}
+
 async function refresh() {
   const { data } = await api("/api/state");
   renderHero(data.nowPlaying, data.playback, data.requests);
@@ -415,6 +506,9 @@ tickClock();
 setInterval(tickClock, 15000);
 refresh();
 setInterval(refresh, 3500);
+loadStats();
+setInterval(loadStats, 15000);
+setInterval(() => renderStat(true), STAT_ROTATE_MS);
 </script>
 </body>
 </html>
